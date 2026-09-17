@@ -24,7 +24,9 @@ Homepage = "https://github.com/Nomafin/devbox-launcher"
 Issues = "https://github.com/Nomafin/devbox-launcher/issues"
 
 [build-system]
-requires = ["setuptools>=68"]
+# >=77 for PEP 639 license metadata (the `license = "MIT"` string form above);
+# 68 would resolve fine and then fail the build on an offline or pinned index.
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
