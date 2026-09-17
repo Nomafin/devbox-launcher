@@ -7,16 +7,27 @@ so you can open a session from your phone without SSHing in.
 The launcher only starts, stops and monitors listeners. You drive the actual
 session in the Claude mobile app or at claude.ai/code.
 
-```
-┌─ devbox sessions ─────────────── RAM 1.2 of 12 GB · Disk 24.2 of 29.4 GB ─┐
-│ ▍ acme         Live · 2 sessions · 3h   [Stop]  [Open in the Claude app]  │
-│ ▍ blog         No session yet · 9d      [Stop]                            │
-│ ▍ demo         Start failed                                               │
-│     Error: You must be logged in to use Remote Control.                   │
-│                                         [Retry]                           │
-│ ▍ webapp                                [Start]  Parallel sessions: off   │
-└───────────────────────────────────────────────────────────────────────────┘
-```
+<p align="center">
+  <img src="docs/images/launcher-sessions.png" width="380"
+       alt="The launcher on a phone: six projects, two live, one with no session yet, one failed with the CLI's error and a Retry button, and a stopped project showing a GitHub origin warning.">
+</p>
+
+Every row is a project. The coloured rail is a health signal, not just
+"process alive" — green means a session is actually live and reachable from the
+app, amber means the listener is registered but idle, red means it failed or
+wedged and carries the CLI's own error underneath it.
+
+When the box's Claude login expires every listener fails the same way, so the
+launcher lets you fix that from the phone too, without a shell:
+
+<p align="center">
+  <img src="docs/images/launcher-signed-out.png" width="380"
+       alt="A red banner reading 'This box is signed out of Claude — no listener can start until it is signed in again', with a Sign in button above the project list.">
+</p>
+
+<sub>Screenshots are rendered from fabricated data by
+<a href="docs/demo_server.py">docs/demo_server.py</a>, which stubs the tmux, git
+and Claude CLI boundaries and lets the real UI code draw the page.</sub>
 
 > **Read [SECURITY.md](SECURITY.md) before installing.** This service starts AI
 > agent sessions that can read and write your code, and it has **no
@@ -141,8 +152,16 @@ python3 -m venv .venv
 .venv/bin/python -m pytest
 ```
 
-262 tests, no network or tmux required — the tmux and CLI boundaries are driven
+270 tests, no network or tmux required — the tmux and CLI boundaries are driven
 through injected runners.
+
+To regenerate the README screenshots, serve the UI against fabricated data and
+capture it at a phone viewport (414 px wide):
+
+```bash
+python docs/demo_server.py                 # http://127.0.0.1:8799/
+python docs/demo_server.py --signed-out    # the signed-out banner
+```
 
 ## License
 
