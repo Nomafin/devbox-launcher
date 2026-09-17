@@ -184,7 +184,13 @@ input {
 # Progressive enhancement: every control is a real form that works without
 # this. The script only trades the full-page POST-redirect-GET for a fetch, so
 # a tap gives feedback on the row it happened on instead of a white reload.
-_JS = """
+#
+# RAW string, deliberately: this is JavaScript source, and Python must not
+# interpret its escapes. A plain string turned the `'\n'` on the join() below
+# into a real newline, which left an unterminated JS string literal — and a
+# parse error there kills the WHOLE block, so the page silently stopped
+# auto-refreshing and every control fell back to a full page reload.
+_JS = r"""
 (function () {
   var list = document.getElementById('list');
   if (!list) return;
