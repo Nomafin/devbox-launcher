@@ -1,0 +1,34 @@
+[project]
+name = "devbox-launcher"
+version = "0.1.0"
+description = "Web UI to start and stop Claude Code remote-control listeners on a headless dev box"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Miika Arponen" }]
+keywords = ["claude", "claude-code", "tmux", "tailscale", "remote-control"]
+classifiers = [
+    "Environment :: Web Environment",
+    "Framework :: FastAPI",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = ["fastapi", "uvicorn", "python-multipart"]
+
+[project.optional-dependencies]
+dev = ["pytest", "httpx"]
+
+[project.urls]
+Homepage = "https://github.com/Nomafin/devbox-launcher"
+Issues = "https://github.com/Nomafin/devbox-launcher/issues"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["launcher"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

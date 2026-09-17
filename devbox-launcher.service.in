@@ -1,0 +1,25 @@
+[Unit]
+Description=Devbox session launcher (web UI)
+After=network-online.target
+# Give up after 5 failures in 5 min instead of restarting forever. A bad deploy
+# once looped ~700 times over an hour, which is silent: the unit reads
+# "active (running)" between crashes. Failing hard makes it visible.
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+ExecStart=@VENV@/bin/python -m launcher
+Environment=LAUNCHER_BASE_DIR=@BASE_DIR@
+Environment=LAUNCHER_HOST=@HOST@
+Environment=LAUNCHER_PORT=@PORT@
+Environment=PATH=@CLAUDE_BIN_DIR@:/usr/local/bin:/usr/bin:/bin
+Restart=on-failure
+RestartSec=5
+# The listeners' tmux server is a child of this unit, so the default
+# KillMode=control-group takes every running session down on restart — a
+# redeploy used to kill all of them. Only signal the web app itself.
+KillMode=process
+
+[Install]
+WantedBy=default.target

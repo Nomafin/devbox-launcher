@@ -1,0 +1,18 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
+
+# Test / tooling caches
+.pytest_cache/
+.ruff_cache/
+
+# Rendered from devbox-launcher.service.in by install.sh
+devbox-launcher.service
+
+# OS / editor cruft
+.DS_Store
+*.swp
