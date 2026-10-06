@@ -15,6 +15,8 @@ VENV="${LAUNCHER_VENV:-$HOME/.local/share/devbox-launcher/venv}"
 BASE_DIR="${LAUNCHER_BASE_DIR:-$HOME/projects}"
 HOST="${LAUNCHER_HOST:-127.0.0.1}"
 PORT="${LAUNCHER_PORT:-8765}"
+# Tailnet login allowed to use "Run command" (a shell on the box). Empty = off.
+RUN_USER="${LAUNCHER_RUN_USER:-}"
 UNIT_DIR="$HOME/.config/systemd/user"
 UNIT="devbox-launcher.service"
 
@@ -72,6 +74,7 @@ sed -e "s|@VENV@|$VENV|g" \
     -e "s|@BASE_DIR@|$BASE_DIR|g" \
     -e "s|@HOST@|$HOST|g" \
     -e "s|@PORT@|$PORT|g" \
+    -e "s|@RUN_USER@|$RUN_USER|g" \
     -e "s|@CLAUDE_BIN_DIR@|$CLAUDE_BIN_DIR|g" \
     "$REPO_DIR/devbox-launcher.service.in" > "$UNIT_DIR/$UNIT"
 

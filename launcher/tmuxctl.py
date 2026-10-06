@@ -46,6 +46,18 @@ _CONNECTED_WORD = re.compile(r"\bConnected\b")
 # its own git worktree, so parallel sessions do not edit the same checkout.
 SPAWN_MODES = ("same-dir", "worktree")
 
+# What `claude remote-control --permission-mode` accepts, in the order the row
+# offers them. The CLI also takes bypassPermissions and dontAsk; neither is
+# offered here — the first is refused outright for a cloud-reachable session,
+# and both would have every listener on the box fail the same silent way if
+# they were tapped by accident. Adding one is a line in this tuple and a label
+# in ui._MODE_LABELS.
+#
+# The mode is fixed when the listener starts — there is no runtime key for it
+# and the app has no control — so changing it means restarting the listener,
+# which is what app.set_mode does.
+PERMISSION_MODES = ("default", "acceptEdits", "auto", "plan")
+
 
 class StartError(RuntimeError):
     """tmux refused to create the session; the message is tmux's own."""
@@ -72,9 +84,15 @@ def is_running(slug: str, run: Runner = default_run) -> bool:
 
 
 def start(project: Project, run: Runner = default_run,
-          session_id: str | None = None, spawn: str = "same-dir") -> None:
+          session_id: str | None = None, spawn: str = "same-dir",
+          permission_mode: str | None = None) -> None:
     if spawn not in SPAWN_MODES:
         raise ValueError(f"unknown spawn mode: {spawn!r}")
+    # None means "say nothing", which leaves the CLI's own default (and any
+    # defaultMode in settings.json) in charge — not the same thing as passing
+    # --permission-mode default, which overrides that setting.
+    if permission_mode is not None and permission_mode not in PERMISSION_MODES:
+        raise ValueError(f"unknown permission mode: {permission_mode!r}")
     name = session_name(project.slug)
     # With a recorded session, resume it so the conversation survives a reboot.
     # The two forms are mutually exclusive, not additive — the CLI rejects
@@ -84,7 +102,12 @@ def start(project: Project, run: Runner = default_run,
     # Quoted: the id comes from a file on disk (pointer.py validates it too),
     # and this string goes through `bash -lc`.
     mode = f"--session-id {shlex.quote(session_id)}" if session_id else f"--spawn {spawn}"
-    command = f"claude remote-control --name {shlex.quote(name)} {mode}"
+    # Passed in both forms: the CLI takes it alongside --session-id as well as
+    # --spawn, so a resumed conversation comes back in the mode the row asks
+    # for rather than the one it happened to be created in. The value is one
+    # of PERMISSION_MODES, checked above, so it needs no quoting.
+    permission = f" --permission-mode {permission_mode}" if permission_mode else ""
+    command = f"claude remote-control --name {shlex.quote(name)} {mode}{permission}"
     # remain-on-exit keeps the pane once the command exits, so a listener that
     # dies on spawn leaves its error behind to read. Without it the session goes
     # with the command, capture-pane finds nothing, and the failure is

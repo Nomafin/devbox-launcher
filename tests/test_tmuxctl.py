@@ -551,3 +551,42 @@ def test_health_does_not_read_disconnected_as_connected():
     # had dropped read as registered and waiting rather than still starting.
     assert tmuxctl._health_from("·✘· Disconnected · demo · main\n", dead=False) == tmuxctl.STARTING
     assert tmuxctl._health_from("·✔︎· Connected · demo · main\n", dead=False) == tmuxctl.READY
+
+
+def test_start_says_nothing_about_the_permission_mode_by_default():
+    # No flag, so the CLI's own default (and any defaultMode in settings.json)
+    # decides — the launcher only speaks when a row has asked it to.
+    calls, run = recorder()
+    tmuxctl.start(Project(slug="demo", name="Demo", path=Path("/home/dev/projects/Demo")),
+                  run=run)
+    assert "--permission-mode" not in calls[0][-1]
+
+
+def test_start_passes_the_permission_mode_to_a_spawning_listener():
+    calls, run = recorder()
+    tmuxctl.start(Project(slug="demo", name="Demo", path=Path("/home/dev/projects/Demo")),
+                  run=run, spawn="worktree", permission_mode="auto")
+    assert calls[0][-1] == ("claude remote-control --name devbox-demo "
+                            "--spawn worktree --permission-mode auto")
+
+
+def test_start_passes_the_permission_mode_to_a_resumed_listener():
+    # The CLI takes it alongside --session-id (unlike --spawn), which is what
+    # lets a conversation come back in a different mode than it was created in.
+    calls, run = recorder()
+    tmuxctl.start(Project(slug="demo", name="Demo", path=Path("/home/dev/projects/Demo")),
+                  run=run, session_id="session_01Q3JF", permission_mode="plan")
+    assert calls[0][-1] == ("claude remote-control --name devbox-demo "
+                            "--session-id session_01Q3JF --permission-mode plan")
+
+
+def test_start_rejects_an_unknown_permission_mode():
+    # It goes through `bash -lc`, and a mode the CLI does not know kills the
+    # listener on start — neither is something a route should be able to do.
+    _, run = recorder()
+    try:
+        tmuxctl.start(Project(slug="demo", name="Demo", path=Path("/x")), run=run,
+                      permission_mode="auto; rm -rf /")
+    except ValueError:
+        return
+    raise AssertionError("an unknown permission mode reached the command line")

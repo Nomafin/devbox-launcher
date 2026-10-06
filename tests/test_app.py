@@ -1,4 +1,5 @@
 import logging
+import shutil
 import time
 import types
 from pathlib import Path
@@ -7,7 +8,8 @@ from fastapi.testclient import TestClient
 from launcher import app as app_module
 from launcher.app import create_app
 from launcher import discovery
-from launcher.tmuxctl import CONNECTED, FAILED, READY, STARTING, STOPPED, STUCK, Status
+from launcher.tmuxctl import (CONNECTED, FAILED, PERMISSION_MODES, READY, STARTING,
+                              STOPPED, STUCK, Status)
 
 
 class FakeTmux:
@@ -25,10 +27,13 @@ class FakeTmux:
         self.age = None                      # seconds since the session started
         self.tail = []                        # what pane_tail() hands back
         self.spawns = []                      # spawn mode passed to each start()
+        self.permissions = []                 # permission mode passed to each start()
         self.sessions = None                  # live sessions the pane reports
+        self.snapshot_slugs = []              # each snapshot() call's slug list
     def snapshot(self, slugs):
         # The real one answers for the whole list in two tmux calls; the fake
         # just projects its own fields through the same shape.
+        self.snapshot_slugs.append(list(slugs))
         out = {}
         for slug in slugs:
             if not self.is_running(slug):
@@ -47,11 +52,13 @@ class FakeTmux:
         if slug in getattr(self, "explode_on", ()):
             raise RuntimeError("boom")
         return slug in self.running
-    def start(self, project, session_id=None, spawn="same-dir"):
+    def start(self, project, session_id=None, spawn="same-dir",
+              permission_mode=None):
         if project.slug in getattr(self, "fail_on", ()):
             raise RuntimeError("boom")
         self.started.append(project.slug); self.resumed.append(session_id)
         self.spawns.append(spawn)
+        self.permissions.append(permission_mode)
         self.running.add(project.slug)
     def stop(self, slug):
         self.stopped.append(slug); self.running.discard(slug); self.dead.discard(slug)
@@ -88,9 +95,21 @@ class FakePointer:
 
 
 class FakeState:
-    def __init__(self, running=None, parallel=None):
+    def __init__(self, running=None, parallel=None, modes=None):
         self.running = list(running or [])
         self.parallel_slugs = list(parallel or [])
+        self.modes = dict(modes or {})        # slug -> permission mode
+        self.instance_table = {}              # project slug -> instance names
+    def instances(self):
+        return {slug: list(names) for slug, names in self.instance_table.items()}
+    def record_instance(self, project_slug, name):
+        self.instance_table.setdefault(project_slug, []).append(name)
+    def forget_instance(self, project_slug, name):
+        names = self.instance_table.get(project_slug, [])
+        if name in names:
+            names.remove(name)
+        if not names:
+            self.instance_table.pop(project_slug, None)
     def parallel(self):
         return list(self.parallel_slugs)
     def set_parallel(self, slug, on):
@@ -98,6 +117,15 @@ class FakeState:
             self.parallel_slugs.append(slug)
         if not on and slug in self.parallel_slugs:
             self.parallel_slugs.remove(slug)
+    def permission_modes(self):
+        return dict(self.modes)
+    def permission_mode(self, slug):
+        return self.modes.get(slug)
+    def set_permission_mode(self, slug, mode):
+        if mode is None:
+            self.modes.pop(slug, None)
+        else:
+            self.modes[slug] = mode
     def desired(self):
         return list(self.running)
     def record_started(self, slug):
@@ -457,6 +485,19 @@ def test_reconcile_prunes_a_project_that_no_longer_exists(tmp_path):
     app.state.reconcile()
     assert tmx.started == []
     assert st.desired() == []
+
+
+def test_reconcile_forgets_an_instance_whose_project_no_longer_exists(tmp_path):
+    # Without this, the instance's entry in "instances" survives forever, and
+    # a later re-clone of the same project resurrects a row that points at a
+    # worktree which does not exist.
+    tmx, trust, st = FakeTmux(), FakeTrust(), FakeState(["ghost--wip"])
+    st.instance_table = {"ghost": ["wip"]}
+    app = make_app(tmp_path, tmx, trust, st=st)
+    app.state.reconcile()
+    assert tmx.started == []
+    assert st.desired() == []
+    assert st.instance_table == {}
 
 
 def test_reconcile_continues_after_one_project_fails(tmp_path):
@@ -848,6 +889,38 @@ def test_a_running_listener_is_flagged_too(tmp_path):
     assert "origin points at GitHub" in body
 
 
+def test_an_instance_row_carries_its_parents_origin_warning(tmp_path):
+    # An instance's cwd is its worktree, whose `.git` is a file rather than a
+    # directory — asking git.blocks_remote_control(instance.cwd) directly
+    # always says no, even though the worktree shares its parent's remotes
+    # and fails to create a session the exact same way. The parent's answer
+    # must be reused instead of re-derived from the instance's own cwd.
+    class ParentOnlyGit(FakeGit):
+        def blocks_remote_control(self, path):
+            return str(path) == str(tmp_path / "demo")
+
+    tmx, trust, st = FakeTmux(), FakeTrust(), FakeState()
+    st.instance_table = {"demo": ["fix-auth"]}
+    body = make_client(tmp_path, tmx, trust, st=st,
+                       git=ParentOnlyGit(blocks=True)).get("/").text
+    assert body.count("origin points at GitHub") == 2
+
+
+def test_an_instance_rows_rename_button_acts_on_the_parent(tmp_path):
+    class ParentOnlyGit(FakeGit):
+        def blocks_remote_control(self, path):
+            return str(path) == str(tmp_path / "demo")
+
+    tmx, trust, st = FakeTmux(), FakeTrust(), FakeState()
+    st.instance_table = {"demo": ["fix-auth"]}
+    body = make_client(tmp_path, tmx, trust, st=st,
+                       git=ParentOnlyGit(blocks=True)).get("/").text
+    # The instance row's own Rename button (if any) must point at the parent
+    # project's slug — a worktree has no `origin` of its own to rename.
+    assert 'action="/fix-remote/demo--fix-auth"' not in body
+    assert body.count('action="/fix-remote/demo"') == 2
+
+
 def test_the_fix_renames_the_remote_and_clears_the_warning(tmp_path):
     tmx, trust, git = FakeTmux(), FakeTrust(), FakeGit(blocks=True)
     client = make_client(tmp_path, tmx, trust, git=git)
@@ -1068,6 +1141,16 @@ def test_the_toggle_ignores_an_unknown_slug(tmp_path):
     assert st.parallel() == []
 
 
+def test_the_toggle_refuses_an_instance_slug(tmp_path):
+    # A worktree of a worktree: the create route already refuses this, and
+    # the toggle must not become the back door into the same mistake.
+    st = FakeState()
+    st.instance_table = {"demo": ["fix-auth"]}
+    make_client(tmp_path, FakeTmux(), FakeTrust(), st=st).post(
+        "/api/parallel/demo--fix-auth", data={"on": "1"})
+    assert st.parallel() == []
+
+
 def test_a_stopped_row_offers_the_toggle(tmp_path):
     body = make_client(tmp_path, FakeTmux(), FakeTrust()).get("/").text
     assert 'action="/parallel/demo"' in body
@@ -1171,7 +1254,7 @@ def test_signing_in_drops_the_cached_answer(tmp_path):
 
 def test_a_start_refused_by_tmux_is_logged_not_raised(tmp_path, caplog):
     class RefusingTmux(FakeTmux):
-        def start(self, project, session_id=None):
+        def start(self, project, session_id=None, **kwargs):
             raise app_module._tmuxctl.StartError("duplicate session: devbox-demo")
     tmx = RefusingTmux()
     client = make_client(tmp_path, tmx, FakeTrust())
@@ -1195,3 +1278,707 @@ def test_a_stop_during_the_settle_wait_is_not_healed_back_up(tmp_path):
     client.post("/start/demo", follow_redirects=False)
     assert tmx.started == ["demo"]
     assert st.desired() == []
+
+
+
+# --- running a command ------------------------------------------------------
+
+from launcher.runctl import NONE as NO_RUN, RunStatus, StartError as RunStartError
+
+ME = "dev@example.com"
+AS_ME = {"Tailscale-User-Login": ME, "Sec-Fetch-Site": "same-origin"}
+
+
+class FakeRun:
+    """Per-slug commands, projected through the same shape as runctl."""
+    def __init__(self, **by_slug):
+        self.st = dict(by_slug)                       # slug -> RunStatus
+        self.text, self.records = {}, {}
+        self.started, self.inputs = [], []
+        self.interrupts, self.closes = [], []
+        self.refuse = False
+    def status(self, slug):
+        return self.st.get(slug, NO_RUN)
+    def statuses(self):
+        return {s: v for s, v in self.st.items() if v.exists}
+    def start(self, slug, command, cwd):
+        if self.refuse:
+            raise RunStartError("no tmux")
+        self.started.append((slug, command, str(cwd)))
+        self.records[slug] = {"command": command, "cwd": str(cwd)}
+        self.st[slug] = RunStatus(True, True, None)
+    def last(self, slug):
+        return self.records.get(slug, {})
+    def output(self, slug):
+        return self.text.get(slug, "")
+    def send_input(self, slug, text):
+        self.inputs.append((slug, text))
+    def interrupt(self, slug):
+        self.interrupts.append(slug)
+    def close(self, slug):
+        self.closes.append(slug)
+        self.st[slug] = NO_RUN
+
+
+RUNNING = RunStatus(True, True, None)
+
+
+def finished(code):
+    return RunStatus(True, False, code)
+
+
+def run_client(tmp_path, runner=None, user=ME):
+    _mkrepo(tmp_path, "demo")
+    return TestClient(create_app(
+        base_dir_fn=lambda: tmp_path, tmx=FakeTmux(), trust=FakeTrust(), disc=discovery,
+        ptr=FakePointer(), st=FakeState(), auth=FakeAuth(), git=FakeGit(),
+        host=FakeHost(""), runner=runner or FakeRun(), run_user=user))
+
+
+def post(client, path, data=None, headers=AS_ME):
+    return client.post(path, data=data or {}, headers=headers, follow_redirects=False)
+
+
+# the row
+
+def test_every_row_offers_run_command(tmp_path):
+    body = run_client(tmp_path).get("/").text
+    assert 'href="/run/demo"' in body
+    assert 'data-run="demo"' in body              # the script opens the modal from this
+    assert 'id="runbox"' in body                  # and the modal itself
+
+
+def test_rows_offer_no_run_when_it_is_disabled(tmp_path):
+    body = run_client(tmp_path, user=None).get("/").text
+    assert "/run/demo" not in body
+    assert 'id="runbox"' not in body
+
+
+def test_row_says_a_command_is_running(tmp_path):
+    body = run_client(tmp_path, FakeRun(demo=RUNNING)).get("/").text
+    assert "Command running" in body
+
+
+def test_row_says_a_command_finished_and_how(tmp_path):
+    body = run_client(tmp_path, FakeRun(demo=finished(3))).get("/").text
+    assert "Command finished · exit 3" in body
+
+
+def test_api_projects_rows_carry_the_run_state_too(tmp_path):
+    data = run_client(tmp_path, FakeRun(demo=RUNNING)).get("/api/projects").json()
+    assert "Command running" in data["projects"][0]["html"]
+
+
+# access
+
+def test_run_refuses_without_the_tailnet_identity(tmp_path):
+    # Tailscale Serve sets this header; anything else on the tailnet that can
+    # reach the page must not get a shell on the box
+    client = run_client(tmp_path)
+    assert client.get("/run/demo").status_code == 403
+    assert client.get("/run/demo", headers={"Tailscale-User-Login": "eve@example.com"}).status_code == 403
+    assert client.get("/api/run/demo").status_code == 403
+
+
+def test_run_is_off_entirely_when_no_user_is_configured(tmp_path):
+    client = run_client(tmp_path, user=None)
+    assert client.get("/run/demo", headers=AS_ME).status_code == 403
+
+
+def test_run_refuses_a_cross_site_post(tmp_path):
+    # the phone's browser adds the identity header to *any* request to the box,
+    # including one a hostile page makes it send
+    runner = FakeRun()
+    client = run_client(tmp_path, runner)
+    data = {"command": "ls"}
+    assert post(client, "/run/demo", data, {"Tailscale-User-Login": ME,
+                                            "Sec-Fetch-Site": "cross-site"}).status_code == 403
+    assert post(client, "/api/run/demo", data, {"Tailscale-User-Login": ME,
+                                                "Origin": "https://evil.example"}).status_code == 403
+    assert runner.started == []
+
+
+def test_run_accepts_a_same_origin_post_without_fetch_metadata(tmp_path):
+    runner = FakeRun()
+    post(run_client(tmp_path, runner), "/run/demo", {"command": "ls"},
+         {"Tailscale-User-Login": ME, "Origin": "http://testserver"})
+    assert len(runner.started) == 1
+
+
+def test_driving_routes_need_the_identity_too(tmp_path):
+    runner = FakeRun(demo=RUNNING)
+    client = run_client(tmp_path, runner)
+    for path in ("/run/demo/input", "/run/demo/interrupt", "/run/demo/close",
+                 "/api/run/demo/input", "/api/run/demo/interrupt", "/api/run/demo/close"):
+        assert post(client, path, {"text": "y"}, headers={}).status_code == 403
+    assert runner.inputs == [] and runner.interrupts == [] and runner.closes == []
+
+
+def test_run_routes_404_for_an_unknown_project(tmp_path):
+    client = run_client(tmp_path)
+    assert client.get("/run/ghost", headers=AS_ME).status_code == 404
+    assert client.get("/api/run/ghost", headers=AS_ME).status_code == 404
+    assert post(client, "/run/ghost", {"command": "ls"}).status_code == 404
+
+
+# starting
+
+def test_running_a_command_starts_it_in_the_project(tmp_path):
+    runner = FakeRun()
+    r = post(run_client(tmp_path, runner), "/run/demo", {"command": " gcloud deploy \n"})
+    assert r.status_code == 303 and r.headers["location"] == "/run/demo"
+    assert runner.started == [("demo", "gcloud deploy", str(tmp_path / "demo"))]
+
+
+def test_run_is_logged(tmp_path, caplog):
+    caplog.set_level(logging.INFO, logger="launcher")
+    post(run_client(tmp_path), "/run/demo", {"command": "rm -rf build"})
+    assert "rm -rf build" in caplog.text and ME in caplog.text and "demo" in caplog.text
+
+
+def test_run_refuses_an_empty_command(tmp_path):
+    runner = FakeRun()
+    post(run_client(tmp_path, runner), "/run/demo", {"command": "   "})
+    assert runner.started == []
+
+
+def test_run_does_not_replace_a_command_still_running(tmp_path):
+    runner = FakeRun(demo=RUNNING)
+    post(run_client(tmp_path, runner), "/run/demo", {"command": "ls"})
+    assert runner.started == [] and runner.closes == []
+
+
+def test_a_refused_start_is_logged_not_raised(tmp_path, caplog):
+    runner = FakeRun()
+    runner.refuse = True
+    r = post(run_client(tmp_path, runner), "/run/demo", {"command": "ls"})
+    assert r.status_code == 303
+    assert "no tmux" in caplog.text
+
+
+# the panel
+
+def test_run_page_offers_a_form_when_nothing_has_run(tmp_path):
+    body = run_client(tmp_path).get("/run/demo", headers=AS_ME).text
+    assert 'action="/run/demo"' in body
+    assert 'data-api="/api/run/demo"' in body
+    assert 'name="command"' in body
+    assert "demo" in body
+
+
+def test_run_page_shows_a_running_command_with_its_controls(tmp_path):
+    runner = FakeRun(demo=RUNNING)
+    runner.text["demo"] = "Continue? (y/n) <&>"
+    runner.records["demo"] = {"command": "deploy <prod>", "cwd": str(tmp_path / "demo")}
+    body = run_client(tmp_path, runner).get("/run/demo", headers=AS_ME).text
+    assert escape("Continue? (y/n) <&>") in body
+    assert escape("deploy <prod>") in body
+    assert 'action="/run/demo/input"' in body
+    assert 'action="/run/demo/interrupt"' in body
+    assert 'name="command"' not in body
+
+
+def test_run_page_shows_the_exit_code_once_finished(tmp_path):
+    runner = FakeRun(demo=finished(2))
+    body = run_client(tmp_path, runner).get("/run/demo", headers=AS_ME).text
+    assert "exit code 2" in body.lower()
+    assert 'action="/run/demo/input"' not in body
+    assert 'action="/run/demo/close"' in body
+
+
+def test_run_page_shows_home_as_a_tilde(tmp_path):
+    runner = FakeRun(demo=RUNNING)
+    runner.records["demo"] = {"command": "ls", "cwd": str(Path.home())}
+    body = run_client(tmp_path, runner).get("/run/demo", headers=AS_ME).text
+    assert '<p class="where">~</p>' in body
+
+
+def test_api_run_reports_state_output_and_the_panel(tmp_path):
+    runner = FakeRun(demo=finished(1))
+    runner.text["demo"] = "out"
+    data = run_client(tmp_path, runner).get("/api/run/demo", headers=AS_ME).json()
+    assert {k: data[k] for k in ("exists", "running", "exitCode", "output")} == {
+        "exists": True, "running": False, "exitCode": 1, "output": "out"}
+    assert 'action="/run/demo/close"' in data["html"]
+
+
+def test_api_start_returns_the_new_state(tmp_path):
+    runner = FakeRun()
+    data = post(run_client(tmp_path, runner), "/api/run/demo", {"command": "ls"}).json()
+    assert data["running"] is True
+    assert runner.started
+
+
+# driving
+
+def test_input_goes_to_a_running_command(tmp_path):
+    runner = FakeRun(demo=RUNNING)
+    r = post(run_client(tmp_path, runner), "/run/demo/input", {"text": " y "})
+    assert r.headers["location"] == "/run/demo"
+    assert runner.inputs == [("demo", "y")]
+
+
+def test_input_is_dropped_once_the_command_has_exited(tmp_path):
+    runner = FakeRun(demo=finished(0))
+    post(run_client(tmp_path, runner), "/api/run/demo/input", {"text": "y"})
+    assert runner.inputs == []
+
+
+def test_interrupt_and_close(tmp_path):
+    runner = FakeRun(demo=RUNNING)
+    client = run_client(tmp_path, runner)
+    post(client, "/run/demo/interrupt")
+    data = post(client, "/api/run/demo/close").json()
+    assert runner.interrupts == ["demo"] and runner.closes == ["demo"]
+    assert data["exists"] is False
+
+
+def test_page_scripts_parse(tmp_path):
+    # A "\n" inside the Python string once became a real newline inside a JS
+    # string literal, and the whole script silently failed to load.
+    import shutil, subprocess as sp
+    node = shutil.which("node")
+    if node is None:
+        import pytest
+        pytest.skip("node not installed")
+    from launcher import ui
+    for script in (ui._RUN_JS + ui._JS,):
+        path = tmp_path / "page.js"
+        path.write_text(script)
+        result = sp.run([node, "--check", str(path)], capture_output=True, text=True)
+        assert result.returncode == 0, result.stderr
+
+
+def test_instances_appear_as_rows_under_their_project(tmp_path):
+    st = FakeState()
+    st.instance_table = {"demo": ["fix-auth"]}
+    tmx = FakeTmux()
+    tmx.running.add("demo--fix-auth")
+    client = make_client(tmp_path, tmx, FakeTrust(), st=st)
+    body = client.get("/").text
+    assert 'data-slug="demo--fix-auth"' in body
+    assert "fix-auth" in body
+    assert 'class="row instance"' in body
+    # the project's own row is still there, and first
+    assert body.index('data-slug="demo"') < body.index('data-slug="demo--fix-auth"')
+
+
+def test_instance_rows_travel_through_the_api_too(tmp_path):
+    st = FakeState()
+    st.instance_table = {"demo": ["fix-auth"]}
+    client = make_client(tmp_path, FakeTmux(), FakeTrust(), st=st)
+    slugs = [row["slug"] for row in client.get("/api/projects").json()["projects"]]
+    assert slugs == ["demo", "demo--fix-auth"]
+
+
+def test_a_running_instance_is_asked_about_in_the_same_batched_pass(tmp_path):
+    st = FakeState()
+    st.instance_table = {"demo": ["fix-auth"]}
+    tmx = FakeTmux()
+    client = make_client(tmp_path, tmx, FakeTrust(), st=st)
+    client.get("/")
+    assert tmx.snapshot_slugs == [["demo", "demo--fix-auth"]]
+
+
+def test_an_instance_row_offers_stop_and_remove_when_running(tmp_path):
+    st = FakeState(["demo--fix-auth"])
+    st.instance_table = {"demo": ["fix-auth"]}
+    tmx = FakeTmux()
+    tmx.running.add("demo--fix-auth")
+    body = make_client(tmp_path, tmx, FakeTrust(), st=st).get("/").text
+    assert 'action="/stop/demo--fix-auth"' in body
+    assert 'action="/instances/demo--fix-auth/remove"' in body
+
+
+def test_remove_shows_a_pending_state_rather_than_looking_instant(tmp_path):
+    # instance_remove polls tmx.stop for up to ~6s; a bare disabled button
+    # with no pending row and no label reads as broken to a phone finger,
+    # exactly like Start/Stop already avoid by going through act() rather
+    # than the "returns in milliseconds" fix() path.
+    st = FakeState(["demo--fix-auth"])
+    st.instance_table = {"demo": ["fix-auth"]}
+    tmx = FakeTmux()
+    tmx.running.add("demo--fix-auth")
+    body = make_client(tmp_path, tmx, FakeTrust(), st=st).get("/").text
+    assert ('<form class="gap" method="post" action="/instances/demo--fix-auth/remove"'
+            in body)
+    assert 'data-pending-label="Removing…"' in body
+
+
+def test_an_instance_row_offers_start_when_stopped(tmp_path):
+    st = FakeState()
+    st.instance_table = {"demo": ["fix-auth"]}
+    body = make_client(tmp_path, FakeTmux(), FakeTrust(), st=st).get("/").text
+    assert 'action="/start/demo--fix-auth"' in body
+
+
+def test_stopping_an_instance_uses_the_existing_route(tmp_path):
+    st = FakeState(["demo--fix-auth"])
+    st.instance_table = {"demo": ["fix-auth"]}
+    tmx = FakeTmux()
+    tmx.running.add("demo--fix-auth")
+    client = make_client(tmp_path, tmx, FakeTrust(), st=st)
+    client.post("/stop/demo--fix-auth", follow_redirects=False)
+    assert tmx.stopped == ["demo--fix-auth"]
+    assert st.desired() == []
+
+
+def test_starting_an_instance_runs_it_in_the_worktree(tmp_path):
+    st = FakeState()
+    st.instance_table = {"demo": ["fix-auth"]}
+    tmx, trust = FakeTmux(), FakeTrust()
+    client = make_client(tmp_path, tmx, trust, st=st)
+    client.post("/start/demo--fix-auth", follow_redirects=False)
+    assert tmx.started == ["demo--fix-auth"]
+    assert trust.seeded[0].endswith("/demo/.claude/worktrees/fix-auth")
+
+
+def test_instances_are_restored_at_boot(tmp_path):
+    st = FakeState(["demo--fix-auth"])
+    st.instance_table = {"demo": ["fix-auth"]}
+    tmx = FakeTmux()
+    app = make_app(tmp_path, tmx, FakeTrust(), st=st)
+    app.state.reconcile()
+    assert tmx.started == ["demo--fix-auth"]
+
+
+def test_rendering_the_page_walks_the_project_tree_once(tmp_path):
+    # snapshot() used to re-resolve each instance from the base dir, which
+    # walks ~/projects again per instance even though the parent Project was
+    # already in hand. One walk per render is the design's whole promise —
+    # the launcher polls this every 20s per open tab.
+    st = FakeState()
+    st.instance_table = {"demo": ["fix-auth", "another"]}
+    tmx = FakeTmux()
+    tmx.running.add("demo--fix-auth")
+    calls = []
+    real_discover = discovery.discover_projects
+
+    def counting_discover(base_dir):
+        calls.append(base_dir)
+        return real_discover(base_dir)
+
+    client = make_client(tmp_path, tmx, FakeTrust(), st=st)
+    discovery.discover_projects = counting_discover
+    try:
+        body = client.get("/").text
+    finally:
+        discovery.discover_projects = real_discover
+    assert len(calls) == 1
+    assert "fix-auth" in body and "another" in body
+
+
+class FakeWorktrees:
+    def __init__(self, error=None, blocked=None):
+        self.created, self.removed, self.pruned = [], [], []
+        self.error = error                 # what create() returns
+        self.blocked = blocked             # what blockers() returns
+        self.there = True                  # what exists() says
+    def path(self, project_cwd, name):
+        return Path(project_cwd) / ".claude" / "worktrees" / name
+    def exists(self, project_cwd, name):
+        return self.there
+    def create(self, project_cwd, name):
+        if self.error:
+            return self.error
+        self.created.append((str(project_cwd), name))
+        return None
+    def blockers(self, worktree_path):
+        return self.blocked
+    def remove(self, project_cwd, name):
+        self.removed.append((str(project_cwd), name))
+        return None
+    def prune(self, project_cwd):
+        self.pruned.append(str(project_cwd))
+
+
+def instance_client(tmp_path, wt=None, st=None, tmx=None, trust=None):
+    _mkrepo(tmp_path, "demo")
+    # follow_redirects=False, like every other POST in this file: the plain
+    # route's 303 lands on "/", and auto-following it here would render (and
+    # so consume) a one-shot note before the test gets to look for it.
+    return TestClient(create_app(
+        base_dir_fn=lambda: tmp_path, tmx=tmx or FakeTmux(), trust=trust or FakeTrust(),
+        disc=discovery, ptr=FakePointer(), st=st or FakeState(), auth=FakeAuth(),
+        git=FakeGit(), host=FakeHost(""), runner=FakeRun(), run_user=None,
+        wt=wt or FakeWorktrees()), follow_redirects=False)
+
+
+def test_creating_an_instance_makes_the_worktree_and_starts_it(tmp_path):
+    wt, st, tmx, trust = FakeWorktrees(), FakeState(), FakeTmux(), FakeTrust()
+    client = instance_client(tmp_path, wt, st, tmx, trust)
+    r = client.post("/instances/demo", data={"name": " fix-auth "}, follow_redirects=False)
+    assert r.status_code == 303
+    assert wt.created == [(str(tmp_path / "demo"), "fix-auth")]
+    assert st.instance_table == {"demo": ["fix-auth"]}
+    assert st.desired() == ["demo--fix-auth"]        # restored after a reboot
+    assert tmx.started == ["demo--fix-auth"]
+    assert trust.seeded[0].endswith("/demo/.claude/worktrees/fix-auth")
+
+
+def test_a_bad_instance_name_is_refused_with_a_reason(tmp_path):
+    wt, st = FakeWorktrees(), FakeState()
+    client = instance_client(tmp_path, wt, st)
+    client.post("/instances/demo", data={"name": "Fix Auth"})
+    assert wt.created == [] and st.instance_table == {}
+    assert "lowercase" in client.get("/").text
+
+
+def test_a_duplicate_instance_name_is_refused(tmp_path):
+    wt, st = FakeWorktrees(), FakeState()
+    st.instance_table = {"demo": ["fix-auth"]}
+    client = instance_client(tmp_path, wt, st)
+    client.post("/instances/demo", data={"name": "fix-auth"})
+    assert wt.created == []
+    assert "already" in client.get("/").text
+
+
+def test_gits_own_error_is_shown_on_the_project_row(tmp_path):
+    wt = FakeWorktrees(error="fatal: 'wip' is already checked out at '/x'")
+    st = FakeState()
+    client = instance_client(tmp_path, wt, st)
+    client.post("/instances/demo", data={"name": "wip"})
+    assert st.instance_table == {}                   # nothing recorded
+    assert "already checked out" in client.get("/").text
+
+
+def test_a_note_is_shown_once_and_then_gone(tmp_path):
+    client = instance_client(tmp_path, FakeWorktrees(), FakeState())
+    client.post("/instances/demo", data={"name": "Bad Name"})
+    assert "lowercase" in client.get("/").text
+    assert "lowercase" not in client.get("/").text
+
+
+def test_the_api_twin_returns_the_new_snapshot(tmp_path):
+    wt, st = FakeWorktrees(), FakeState()
+    data = instance_client(tmp_path, wt, st).post(
+        "/api/instances/demo", data={"name": "wip"}).json()
+    assert any(row["slug"] == "demo--wip" for row in data["projects"])
+
+
+def test_an_instance_of_an_instance_is_refused(tmp_path):
+    wt, st = FakeWorktrees(), FakeState()
+    st.instance_table = {"demo": ["fix-auth"]}
+    client = instance_client(tmp_path, wt, st)
+    client.post("/instances/demo--fix-auth", data={"name": "deeper"})
+    assert wt.created == []
+
+
+def test_creating_an_instance_survives_the_project_vanishing_mid_create(tmp_path):
+    # A rare race: the project directory disappears between the resolve()
+    # that found it and the resolve() that looks up the instance just
+    # created. Without a None check there, `instance.slug` raises and this
+    # request 500s instead of simply having nothing left to launch.
+    st = FakeState()
+
+    class VanishingWorktrees(FakeWorktrees):
+        def create(self, project_cwd, name):
+            shutil.rmtree(project_cwd)
+            return super().create(project_cwd, name)
+
+    client = instance_client(tmp_path, VanishingWorktrees(), st)
+    r = client.post("/instances/demo", data={"name": "fix-auth"}, follow_redirects=False)
+    assert r.status_code == 303
+
+
+def test_every_project_row_offers_a_new_instance_form(tmp_path):
+    body = instance_client(tmp_path).get("/").text
+    assert 'action="/instances/demo"' in body
+    assert 'name="name"' in body
+
+
+def test_create_shows_a_pending_state_rather_than_looking_instant(tmp_path):
+    # `git worktree add` plus the full launch() path takes several seconds,
+    # the same order as Start — a bare disabled button with no feedback
+    # invites a second tap on a phone.
+    body = instance_client(tmp_path).get("/").text
+    assert '<form class="gap" method="post" action="/instances/demo"' in body
+    assert 'data-pending-label="Creating…"' in body
+
+
+# --- removing an instance -----------------------------------------------------
+
+def running_instance(tmp_path, wt=None):
+    st = FakeState(["demo--fix-auth"])
+    st.instance_table = {"demo": ["fix-auth"]}
+    tmx = FakeTmux()
+    tmx.running.add("demo--fix-auth")
+    return instance_client(tmp_path, wt or FakeWorktrees(), st, tmx), st, tmx
+
+
+def test_removing_a_clean_instance_stops_it_and_takes_the_worktree(tmp_path):
+    wt = FakeWorktrees()
+    client, st, tmx = running_instance(tmp_path, wt)
+    r = client.post("/instances/demo--fix-auth/remove", follow_redirects=False)
+    assert r.status_code == 303
+    assert tmx.stopped == ["demo--fix-auth"]
+    assert wt.removed == [(str(tmp_path / "demo"), "fix-auth")]
+    assert st.instance_table == {} and st.desired() == []
+
+
+def test_a_dirty_instance_is_refused_and_left_running(tmp_path):
+    wt = FakeWorktrees(blocked="It has uncommitted changes.")
+    client, st, tmx = running_instance(tmp_path, wt)
+    client.post("/instances/demo--fix-auth/remove")
+    assert wt.removed == []
+    assert tmx.stopped == []                       # the session is not the price
+    assert st.instance_table == {"demo": ["fix-auth"]}
+    assert "uncommitted" in client.get("/").text
+
+
+def test_a_worktree_already_gone_is_still_forgotten(tmp_path):
+    wt = FakeWorktrees()
+    wt.there = False
+    client, st, tmx = running_instance(tmp_path, wt)
+    client.post("/instances/demo--fix-auth/remove")
+    assert wt.removed == []
+    assert wt.pruned == [str(tmp_path / "demo")]   # git still thinks it is there
+    assert st.instance_table == {}
+    assert tmx.stopped == ["demo--fix-auth"]
+
+
+def test_a_failed_removal_says_why_and_keeps_the_instance(tmp_path):
+    class Stubborn(FakeWorktrees):
+        def remove(self, project_cwd, name):
+            return "fatal: validation failed"
+    client, st, _ = running_instance(tmp_path, Stubborn())
+    client.post("/instances/demo--fix-auth/remove")
+    assert st.instance_table == {"demo": ["fix-auth"]}
+    assert "validation failed" in client.get("/").text
+
+
+def test_removing_a_project_is_not_a_thing(tmp_path):
+    wt, st = FakeWorktrees(), FakeState()
+    client = instance_client(tmp_path, wt, st)
+    r = client.post("/instances/demo/remove", follow_redirects=False)
+    assert r.status_code == 303
+    assert wt.removed == []
+
+
+def test_the_remove_api_twin_returns_the_new_snapshot(tmp_path):
+    client, _, _ = running_instance(tmp_path)
+    data = client.post("/api/instances/demo--fix-auth/remove").json()
+    assert all(row["slug"] != "demo--fix-auth" for row in data["projects"])
+
+
+# --- permission mode ---------------------------------------------------------
+
+def test_every_offered_mode_is_one_the_cli_accepts(tmp_path):
+    # The labels are the page's own words; the values behind them go on a
+    # command line, so the two lists must not drift apart.
+    from launcher import ui
+    assert tuple(ui._MODE_LABELS) == PERMISSION_MODES
+
+
+def test_a_row_says_which_permission_mode_it_is_in(tmp_path):
+    body = make_client(tmp_path, FakeTmux(), FakeTrust(),
+                       st=FakeState(modes={"demo": "auto"})).get("/").text
+    assert "Permission mode: Auto" in body
+    assert 'action="/mode/demo"' in body
+
+
+def test_a_row_with_no_recorded_mode_reads_as_ask(tmp_path):
+    # Nothing recorded means no flag, so the listener gets the CLI's default —
+    # which is what the row must say rather than leaving it blank.
+    body = make_client(tmp_path, FakeTmux(), FakeTrust()).get("/").text
+    assert "Permission mode: Ask" in body
+
+
+def test_the_picker_records_the_mode_and_redraws_the_row(tmp_path):
+    st = FakeState()
+    client = make_client(tmp_path, FakeTmux(), FakeTrust(), st=st)
+    body = client.post("/api/mode/demo", data={"mode": "auto"}).json()
+    assert st.permission_modes() == {"demo": "auto"}
+    assert "Permission mode: Auto" in body["projects"][0]["html"]
+
+
+def test_choosing_ask_forgets_the_recorded_mode(tmp_path):
+    # Not "--permission-mode default": that would override a defaultMode in
+    # settings.json, which is not what tapping Ask means.
+    st = FakeState(modes={"demo": "auto"})
+    client = make_client(tmp_path, FakeTmux(), FakeTrust(), st=st)
+    client.post("/api/mode/demo", data={"mode": "default"})
+    assert st.permission_modes() == {}
+
+
+def test_the_picker_works_without_javascript(tmp_path):
+    st = FakeState()
+    client = make_client(tmp_path, FakeTmux(), FakeTrust(), st=st)
+    r = client.post("/mode/demo", data={"mode": "plan"}, follow_redirects=False)
+    assert r.status_code == 303 and st.permission_modes() == {"demo": "plan"}
+
+
+def test_the_picker_refuses_a_mode_the_cli_does_not_know(tmp_path):
+    tmx = FakeTmux(state=CONNECTED)
+    tmx.running.add("demo")
+    client = make_client(tmp_path, tmx, FakeTrust(), st=FakeState(running=["demo"]))
+    client.post("/api/mode/demo", data={"mode": "bypassPermissions"})
+    # Neither recorded nor acted on: a listener restarted into a mode the CLI
+    # rejects dies on start, with no way back from a phone but Start.
+    assert tmx.stopped == [] and tmx.started == []
+    client.post("/api/mode/demo", data={"mode": ""})
+    assert tmx.stopped == []
+
+
+def test_the_picker_ignores_an_unknown_slug(tmp_path):
+    st = FakeState()
+    make_client(tmp_path, FakeTmux(), FakeTrust(), st=st).post(
+        "/api/mode/ghost", data={"mode": "auto"})
+    assert st.permission_modes() == {}
+
+
+def test_a_stopped_listener_is_not_started_by_a_mode_change(tmp_path):
+    # The mode is for the next Start; choosing one is not asking for a session.
+    tmx, st = FakeTmux(), FakeState()
+    make_client(tmp_path, tmx, FakeTrust(), st=st).post("/api/mode/demo", data={"mode": "auto"})
+    assert tmx.started == [] and st.desired() == []
+
+
+def test_a_running_listener_restarts_into_the_new_mode(tmp_path):
+    # The CLI fixes the mode at startup and the Claude app cannot change it,
+    # so this restart is the only way the running sessions ever see it.
+    tmx = FakeTmux(state=CONNECTED)
+    tmx.running.add("demo")
+    st = FakeState(running=["demo"])
+    ptr = FakePointer(sid="session_01ABC")
+    client = make_client(tmp_path, tmx, FakeTrust(), ptr=ptr, st=st)
+    client.post("/api/mode/demo", data={"mode": "auto"})
+    assert tmx.stopped == ["demo"] and tmx.started == ["demo"]
+    assert tmx.permissions == ["auto"]
+    # The conversation comes back with it: this is a restart, not a reset.
+    assert ptr.cleared == [] and tmx.resumed == ["session_01ABC"]
+
+
+def test_the_recorded_mode_is_used_by_a_plain_start(tmp_path):
+    tmx = FakeTmux()
+    client = make_client(tmp_path, tmx, FakeTrust(), st=FakeState(modes={"demo": "plan"}))
+    client.post("/api/start/demo")
+    assert tmx.permissions == ["plan"]
+
+
+def test_the_recorded_mode_survives_a_reboot(tmp_path):
+    # reconcile() is what brings listeners back with no phone in the loop, so
+    # it must bring them back in the mode the row last asked for.
+    tmx = FakeTmux()
+    app = make_app(tmp_path, tmx, FakeTrust(),
+                   st=FakeState(running=["demo"], modes={"demo": "auto"}))
+    app.state.reconcile()
+    assert tmx.started == ["demo"] and tmx.permissions == ["auto"]
+
+
+def test_a_parallel_listener_takes_the_mode_too(tmp_path):
+    tmx = FakeTmux()
+    client = make_client(tmp_path, tmx, FakeTrust(),
+                         st=FakeState(parallel=["demo"], modes={"demo": "acceptEdits"}))
+    client.post("/api/start/demo")
+    assert tmx.spawns == ["worktree"] and tmx.permissions == ["acceptEdits"]
+
+
+def test_an_instance_row_has_a_picker_of_its_own(tmp_path):
+    # An instance is its own listener; its mode is not the parent's.
+    st = FakeState(modes={"demo--fix-auth": "plan"})
+    st.instance_table = {"demo": ["fix-auth"]}
+    (tmp_path / "demo" / ".claude" / "worktrees" / "fix-auth").mkdir(parents=True)
+    body = make_client(tmp_path, FakeTmux(), FakeTrust(), st=st).get("/").text
+    assert 'action="/mode/demo--fix-auth"' in body
+    assert "Permission mode: Plan" in body
