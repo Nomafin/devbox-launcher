@@ -16,8 +16,10 @@ from pathlib import Path
 
 import uvicorn
 
+from launcher import discovery
 from launcher.app import create_app
 from launcher.discovery import Project
+from launcher.runctl import RunStatus
 from launcher.tmuxctl import CONNECTED, FAILED, READY, STOPPED, Status
 
 BASE = Path.home() / "projects"
@@ -38,6 +40,9 @@ STATUSES = {
     # A group project running several sessions in worktree mode.
     "acme": Status(running=True, state=CONNECTED, age=10_800, sessions=3,
                    url="https://claude.ai/code?environment=env_01Rb8TnKqW3xMzJ5vHd7Ls2Y"),
+    # An instance of acme: its own worktree and branch, one live session.
+    "acme--spike": Status(running=True, state=CONNECTED, age=1_500, sessions=1,
+                          url="https://claude.ai/code?environment=env_01Tz6KpLmQr8WvXn3Hd4Jc9F"),
     # A listener you left up over a week ago — the age is the point.
     "blog": Status(running=True, state=CONNECTED, age=777_600, sessions=1,
                    url="https://claude.ai/code?environment=env_01Qw4NmPvXs2LtRk9Bd6Hy3C"),
@@ -75,6 +80,43 @@ class FakeState:
 
     def desired(self):
         return []                # nothing to restore: keeps boot reconcile quiet
+
+    def instances(self):
+        return {"acme": ["spike"]}   # one instance row, indented under acme
+
+    def permission_modes(self):
+        # Everything else shows the default chip ("Ask").
+        return {"acme": "auto", "acme--spike": "acceptEdits", "demo": "plan"}
+
+
+class FakeRunner:
+    """Run command: one finished command on blog, nothing elsewhere."""
+    RUNS = {"blog": RunStatus(exists=True, running=False, exit_code=0)}
+
+    def statuses(self):
+        return dict(self.RUNS)
+
+    def status(self, slug):
+        return self.RUNS.get(slug, RunStatus(False, False, None))
+
+    def output(self, slug):
+        return ("From github.com:you/blog\n * branch            main       -> FETCH_HEAD\n"
+                "Already up to date.\n")
+
+    def last(self, slug):
+        return {"command": "git pull github main", "cwd": str(BASE / "blog")}
+
+    def start(self, slug, command, cwd):
+        pass
+
+    def send_input(self, slug, text):
+        pass
+
+    def interrupt(self, slug):
+        pass
+
+    def close(self, slug):
+        pass
 
 
 class FakePointer:
@@ -115,6 +157,15 @@ class FakeDiscovery:
     def discover_projects(self, base_dir):
         return list(PROJECTS)
 
+    # Pure functions of their inputs; the real ones are what the page uses.
+    instance_of = staticmethod(discovery.instance_of)
+
+    def resolve_slug(self, base_dir, slug, instances=None):
+        for project in PROJECTS:
+            if project.slug == slug:
+                return project
+        return None
+
 
 def main() -> None:
     parser = argparse.ArgumentParser()
@@ -127,6 +178,9 @@ def main() -> None:
         base_dir_fn=lambda: BASE,
         tmx=FakeTmux(), disc=FakeDiscovery(), st=FakeState(), ptr=FakePointer(),
         git=FakeGit(), host=FakeHost(), auth=FakeAuth(signed_in=not args.signed_out),
+        # Run command is shown when a run user is configured, as on a real box
+        # that has opted in; the stub never runs anything.
+        runner=FakeRunner(), run_user="you@example.com",
     )
     uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="warning")
 

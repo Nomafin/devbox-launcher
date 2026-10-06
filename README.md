@@ -9,7 +9,7 @@ session in the Claude mobile app or at claude.ai/code.
 
 <p align="center">
   <img src="docs/images/launcher-sessions.png" width="380"
-       alt="The launcher on a phone: six projects, two live, one with no session yet, one failed with the CLI's error and a Retry button, and a stopped project showing a GitHub origin warning.">
+       alt="The launcher on a phone: six projects and one instance. Acme is live with three parallel sessions in Auto permission mode and has an indented instance row 'spike' with its own listener; blog is live with a finished Run command; demo has no session yet; webapp failed with the CLI's error and a Retry button; two stopped projects show Start, Parallel sessions and New instance, and one carries a GitHub origin warning.">
 </p>
 
 Every row is a project. The coloured rail is a health signal, not just
@@ -23,6 +23,16 @@ launcher lets you fix that from the phone too, without a shell:
 <p align="center">
   <img src="docs/images/launcher-signed-out.png" width="380"
        alt="A red banner reading 'This box is signed out of Claude — no listener can start until it is signed in again', with a Sign in button above the project list.">
+</p>
+
+Claude sometimes needs *you* to run a command — a production deploy, an
+interactive login — and over Remote Control you cannot type `! <cmd>` from the
+app. **Run command** runs it on the box, in the project's directory, with the
+output, any prompt and the exit code right there in the modal:
+
+<p align="center">
+  <img src="docs/images/launcher-run.png" width="380"
+       alt="The Run command modal over the blog row: the command 'git pull github main', its directory, the command's output, 'Finished — exit code 0', and Copy output and Done buttons.">
 </p>
 
 <sub>Screenshots are rendered from fabricated data by
@@ -218,9 +228,14 @@ To regenerate the README screenshots, serve the UI against fabricated data and
 capture it at a phone viewport (414 px wide):
 
 ```bash
-python docs/demo_server.py                 # http://127.0.0.1:8799/
-python docs/demo_server.py --signed-out    # the signed-out banner
+python docs/demo_server.py                 # http://127.0.0.1:8799/  (full page)
+python docs/demo_server.py --signed-out    # the signed-out banner   (viewport)
 ```
+
+The Run command modal is the third image: with the server in its default
+mode, send the `Tailscale-User-Login: you@example.com` header (the demo's
+configured run user), tap **Run command** on the `blog` row, and capture the
+viewport.
 
 ## License
 
