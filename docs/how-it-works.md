@@ -23,7 +23,10 @@ style a page this small.
 | `gitremote.py` | Detects and fixes the GitHub `origin` gotcha |
 | `trust.py` | Seeds workspace trust in `~/.claude.json` |
 | `hostinfo.py` | RAM/disk readout for the page header |
-| `config.py` | Base-dir resolution |
+| `instances.py` | Instance slugs: `<project>--<name>` |
+| `worktrees.py` | Every git call made for instances: create, inspect, remove |
+| `runctl.py` | "Run command": a shell command in a tmux session the page can read and type into |
+| `config.py` | Base-dir and run-user resolution |
 
 ## One batched status pass
 
@@ -121,6 +124,69 @@ A stopped row has a **Parallel sessions: off/on** toggle; it sets the mode the
   conversation, and *Start fresh* is not offered.
 
 The mode is kept per project in `desired.json` under `"parallel"`.
+
+## Permission mode
+
+`claude remote-control --permission-mode <mode>` is fixed when the listener
+starts; there is no runtime key for it and the Claude app has no control over
+it. The row's chips (**Ask**, **Accept edits**, **Auto**, **Plan**) map to
+`tmuxctl.PERMISSION_MODES` (`default`, `acceptEdits`, `auto`, `plan`), and the
+choice is kept per slug in `desired.json` under `"permissionMode"` so restore
+replays it.
+
+- **Ask** records nothing and passes no flag, so the CLI's own default — and a
+  `defaultMode` in `~/.claude/settings.json` — applies.
+- Picking a mode on a **running** row restarts the listener and resumes the
+  same conversation. Unlike `--spawn`, the CLI accepts `--permission-mode`
+  alongside `--session-id`, which is what lets a conversation come back in a
+  different mode than it was created in. The resume pointer is kept (Retry
+  clears it).
+- An unknown mode is a `ValueError` before anything reaches `bash -lc`.
+- `bypassPermissions` and `dontAsk` are deliberately missing: the first is
+  refused outright for a cloud-reachable session, and a mis-tap on either would
+  fail the listener with Start as the only way back. Adding one is a line in
+  `tmuxctl.PERMISSION_MODES` and a label in `ui._MODE_LABELS`.
+
+## Instances
+
+An instance is an ordinary listener whose launch dir is a git worktree of the
+project at `<launch dir>/.claude/worktrees/<name>`, on branch `<name>`. Its
+slug is `<project>--<name>`; `--` is unambiguous because `slugify` collapses
+every run of punctuation to a single `-`, so no folder can produce it.
+
+`worktrees.py` is the only module that shells out to git. Create reuses the
+branch if it exists, otherwise cuts it from the project's current `HEAD`.
+Remove runs `blockers()` first and refuses — leaving the listener running — on
+uncommitted changes, commits on no remote, a gitignored file at the worktree
+root (a directory such as `node_modules/` does not block), an unborn `HEAD`
+being treated as safe, and **fails closed** when any of those checks errors. The
+branch is never deleted.
+
+Instances are recorded in `desired.json` under `"instances"`, so
+`reconcile()` relaunches them at boot and forgets an instance whose project has
+disappeared. A worktree the Claude app created for one of its own parallel
+sessions is not an instance and is never listed.
+
+## Run command
+
+`runctl.py` runs one shell command per project in tmux session
+`launcher-run-<slug>` on the launcher's socket, in the project's launch dir,
+via `bash -lc`. The page polls `/api/run/<slug>` for the pane text and exit
+code (tmux `remain-on-exit` keeps the dead pane and its output), posts typed
+input with `send-keys -l` followed by Enter, and sends Ctrl-C for interrupt —
+the same mechanics as the sign-in flow. The last command per project is kept in
+`~/.local/state/devbox-launcher/run-<slug>.json` so the row can show *Command
+finished · exit N* after a reload; **Done** clears it. Every run is logged to
+the journal as `run: <user> ran '<cmd>' in <dir> (<slug>)`; typed input is not.
+
+Access: the feature exists only when `LAUNCHER_RUN_USER` is set, and every
+`/run/*` and `/api/run/*` request must carry a matching `Tailscale-User-Login`
+header (which Tailscale Serve adds to each request it proxies) and, for POSTs,
+be same-origin (`Sec-Fetch-Site`, or an `Origin` matching the host). Neither
+stops a process on the box itself — see SECURITY.md.
+
+Without JavaScript or `<dialog>`, the button is a plain link to `/run/<slug>`,
+the same panel as a page.
 
 ## Restore after reboot
 

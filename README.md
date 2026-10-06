@@ -79,6 +79,7 @@ All optional, read from the environment by the systemd unit:
 | `LAUNCHER_HOST` | `127.0.0.1` | Bind address — see SECURITY.md before changing |
 | `LAUNCHER_PORT` | `8765` | Bind port |
 | `LAUNCHER_VENV` | `~/.local/share/devbox-launcher/venv` | Install location (install-time only) |
+| `LAUNCHER_RUN_USER` | *(empty)* | Tailnet login allowed to use **Run command**; empty hides the feature — see below |
 
 ## How projects are discovered
 
@@ -110,8 +111,64 @@ row tells the truth immediately rather than flipping states under you.
 Other controls: **Retry** (stop, clear the resume pointer, start again),
 **Start fresh** (discard the recorded conversation), **Parallel sessions**
 (`--spawn worktree`, so each session gets its own git worktree and several can
-edit at once), and **Show output** (last 20 lines of the pane, fetched on
-demand).
+edit at once), **Show output** (last 20 lines of the pane, fetched on demand),
+and the three below.
+
+**Permission mode.** Every row has a `▸ Permission mode` disclosure with four
+chips: **Ask**, **Accept edits**, **Auto**, **Plan**. This is
+`claude remote-control --permission-mode`, which the CLI fixes at listener
+startup and the Claude app cannot change afterwards — so before this, a session
+stuck asking about every edit could only be fixed from a terminal. On a
+stopped row it sets what the next Start uses; on a running row it restarts the
+listener (a few seconds) and resumes the same conversation. **Ask** passes no
+flag, so the CLI's own default (and any `defaultMode` in
+`~/.claude/settings.json`) applies. `bypassPermissions` and `dontAsk` are
+deliberately not offered; see [docs/how-it-works.md](docs/how-it-works.md).
+
+### Instances: a second copy of a project
+
+**New instance** on a project row creates a git worktree at
+`<launch dir>/.claude/worktrees/<name>` on branch `<name>` (reused if it
+exists, otherwise cut from the project's current checkout) and starts a
+listener for it. It shows up in the Claude app as `devbox-<slug>--<name>` and
+on the page as an indented row under its project with the same controls.
+
+**Remove instance** stops the listener and deletes the worktree. It refuses,
+and says why, when the worktree has uncommitted changes, commits on no remote,
+or a gitignored *file* at its top level (a `.env`, a scratch note — `git
+status` is silent about those but `git worktree remove` deletes them). There is
+no force button on purpose: this is driven from a phone. Commit and push, then
+remove. The branch is left behind either way.
+
+Instances survive a reboot like any other listener. Worktrees the Claude app
+makes for its own parallel sessions are **not** instances and never appear as
+rows.
+
+### Run a command (from the phone)
+
+Claude sometimes needs **you** to run a command: one its permission check
+refuses (it changes production) or one that waits for input (a login). Over
+Remote Control `! <command>` cannot be typed, so each project row can carry a
+**Run command** button. It opens a modal: paste the command, tap **Run**, and
+it runs in the project's launch dir with the output shown live. A prompt? Type
+the answer and **Send**. **Ctrl-C** interrupts. When it exits, **Copy output**
+copies command, output and exit code for pasting back to Claude.
+
+Closing the modal does not stop the command; the row says *Command running* /
+*Command finished · exit N* until you tap **Done**. One command per project at
+a time. Each runs as the launcher's user in `bash -lc` inside tmux session
+`launcher-run-<slug>` on the launcher's socket, so
+`tmux -L devbox-launcher attach -t launcher-run-<slug>` takes it over from a
+shell. Every run is logged to the journal; what you type at a prompt is not.
+
+**This is a shell on the box, so it is off until you opt in** by setting
+`LAUNCHER_RUN_USER` to your tailnet login (the `Tailscale-User-Login` header
+that Tailscale Serve adds to every request it proxies, e.g.
+`LAUNCHER_RUN_USER=you@example.com ./install.sh`). Anyone else gets 403, and
+POSTs must be same-origin. Read the *Run command* section of
+[SECURITY.md](SECURITY.md) before enabling it — in particular, tell your Claude
+sessions to hand you commands rather than call the endpoint themselves; a
+ready-made `CLAUDE.md` block is in [docs/claude-md-snippet.md](docs/claude-md-snippet.md).
 
 Listeners cost roughly 165 MB each and are started on demand. tmux sessions do
 not survive a reboot, but the launcher records intent in
@@ -128,6 +185,7 @@ offers a one-tap **Rename origin → github** button. See
 - [SECURITY.md](SECURITY.md) — threat model; read it first
 - [docs/how-it-works.md](docs/how-it-works.md) — architecture and design notes
 - [docs/troubleshooting.md](docs/troubleshooting.md) — failure modes seen in practice
+- [docs/claude-md-snippet.md](docs/claude-md-snippet.md) — tell Claude sessions about Run command and instances
 
 ## Known limitations
 
@@ -143,6 +201,7 @@ offers a one-tap **Rename origin → github** button. See
 - **Linux only.** `hostinfo.py` reads `/proc/meminfo` (and is lxcfs-aware so it
   reports a container's limit rather than the host's).
 - **No multi-user support.** One launcher, one Unix user, one Claude account.
+  `LAUNCHER_RUN_USER` names one person, not a list.
 
 ## Development
 
@@ -152,7 +211,7 @@ python3 -m venv .venv
 .venv/bin/python -m pytest
 ```
 
-270 tests, no network or tmux required — the tmux and CLI boundaries are driven
+409 tests, no network, tmux or git required — the tmux and CLI boundaries are driven
 through injected runners.
 
 To regenerate the README screenshots, serve the UI against fabricated data and

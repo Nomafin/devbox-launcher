@@ -125,6 +125,51 @@ Stop does free the compute — the tmux process dies and RAM is freed — and se
 Ctrl-C so the entry flips to **offline** promptly. To actually remove an entry,
 do it in the Claude app's Code tab.
 
+## No Run command button / Run command answers 403
+
+The button only exists when the service has `LAUNCHER_RUN_USER` set
+(`systemctl --user show devbox-launcher.service -p Environment`). A 403 means
+the request's `Tailscale-User-Login` header did not match it: check the exact
+login Tailscale reports for your device,
+
+```bash
+tailscale whois <your-device-ip> | grep -i login
+```
+
+and that you are reaching the UI *through* `tailscale serve` — a direct
+`http://127.0.0.1:8765` request carries no such header. A 403 on POST only,
+with GET working, is the same-origin check: the page was opened from a
+different host name than the one it posts to.
+
+## Remove instance refuses
+
+The row says what blocked it: uncommitted changes, commits that exist on no
+remote, or a gitignored file at the worktree's top level. Fix it in the
+worktree itself,
+
+```bash
+cd <launch dir>/.claude/worktrees/<name>
+git status --short --ignored    # the `!!` lines at the top level count
+git push -u <remote> <name>
+```
+
+then tap Remove again. There is no force path from the UI by design; from a
+shell, `git worktree remove --force` does what you would expect, and the
+listener (`devbox-<slug>--<name>`) should be stopped first.
+
+## A session picked up the wrong permission mode
+
+The chip shows what the *next* Start uses on a stopped row, and what the
+listener was started with on a running one. The mode is passed on the command
+line, so confirm with
+
+```bash
+tmux -L devbox-launcher capture-pane -t devbox-<slug> -p -S -50 | grep -o -- '--permission-mode [a-zA-Z]*'
+```
+
+**Ask** passes no flag at all, so `defaultMode` in `~/.claude/settings.json`
+wins there.
+
 ## URL not reachable
 
 ```bash

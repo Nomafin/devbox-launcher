@@ -17,6 +17,13 @@ Anyone who can open the UI can:
   ever performs inside a repo);
 - **complete a Claude sign-in** if the box is signed out — which binds the box
   to *their* Claude account.
+- **create and remove git worktrees** under any project (*New instance* /
+  *Remove instance*); removal refuses when it would lose work, but creation
+  is unconditional;
+- **restart any listener in a different permission mode**, including `auto`,
+  which lets the agent act without asking;
+- **run arbitrary shell commands as your user**, *if* you have enabled **Run
+  command** by setting `LAUNCHER_RUN_USER` — see below.
 
 There is no login, no session cookie, no CSRF token, and no audit log.
 
@@ -60,6 +67,37 @@ deployment and would be indefensible outside it:
 - **It runs agents unattended.** A listener sitting at *No session yet* can be
   picked up from the Claude app at any time, days later. Stop the ones you are
   not using.
+
+## Run command
+
+Off by default. When `LAUNCHER_RUN_USER` is set, the UI offers a **Run
+command** button that runs whatever you paste, as the launcher's Unix user, in
+the project's directory. It exists so that *you* can run what Claude may not —
+a production deploy, an interactive login — from the phone.
+
+Two checks gate it, and it matters what they do and do not stop:
+
+- Requests must carry a `Tailscale-User-Login` header equal to
+  `LAUNCHER_RUN_USER`. Tailscale Serve sets that header on every request it
+  proxies, from the identity of the tailnet device making it. So through
+  Serve, only you can reach it.
+- POSTs must be same-origin (`Sec-Fetch-Site`, falling back to `Origin`
+  matching the host), so a hostile page opened in the phone's browser cannot
+  make it run a command through the header Serve would add.
+
+**Neither stops a process on the box itself.** `127.0.0.1:8765` is reachable
+locally and the header can be forged there — by a Claude session, for example,
+which is exactly the actor whose permission check the feature exists to
+respect. The launcher cannot tell the difference, so the control is a rule for
+the agent, not a wall: put the block in
+[docs/claude-md-snippet.md](docs/claude-md-snippet.md) into the box's
+`~/.claude/CLAUDE.md`, which tells every session to hand you the command and
+never call `/run` itself. If that trade-off is not acceptable for your box,
+leave `LAUNCHER_RUN_USER` empty and the feature does not exist.
+
+Every run is written to the journal (`run: <user> ran '<cmd>' in <dir>`). Input
+typed at a prompt is not logged, so passwords pasted into a login stay out of
+the log.
 
 ## Sign-in over the web UI
 
