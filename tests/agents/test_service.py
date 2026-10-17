@@ -19,11 +19,11 @@ def argv(w, display):
 
 def test_start_main_in_checkout(world):
     a = service.start(world.ctx, world.place, MAIN)
-    assert a.state == ACTIVE and a.display == "notes·main"
-    s = world.tmux.sessions["notes·main"]
+    assert a.state == ACTIVE and a.display == "notes/main"
+    s = world.tmux.sessions["notes/main"]
     assert s["cwd"] == str(world.repo)
     assert s["env"]["AGENT_NAME"] == "notes/main"
-    assert "--session-id" in argv(world, "notes·main")
+    assert "--session-id" in argv(world, "notes/main")
     assert world.trusted == [str(world.repo)]
     assert registry.load(world.ctx.root)["notes/main"].session_id == a.session_id
 
@@ -57,16 +57,16 @@ def test_unknown_agent_and_create(world):
         service.start(world.ctx, world.place, "drafts")
     assert e.value.code == AgentError.UNKNOWN
     a = service.start(world.ctx, world.place, "drafts", create=True)
-    assert world.tmux.sessions["notes·drafts"]["cwd"] == a.workdir
+    assert world.tmux.sessions["notes/drafts"]["cwd"] == a.workdir
 
 
 def test_stop_then_start_resumes(world):
     a = service.start(world.ctx, world.place, MAIN)
     service.stop(world.ctx, world.place, MAIN)
-    assert "notes·main" not in world.tmux.sessions
+    assert "notes/main" not in world.tmux.sessions
     assert registry.load(world.ctx.root)["notes/main"].state == STOPPED
     service.start(world.ctx, world.place, MAIN)
-    cmd = argv(world, "notes·main")
+    cmd = argv(world, "notes/main")
     assert cmd[cmd.index("--resume") + 1] == a.session_id
 
 
@@ -74,13 +74,13 @@ def test_fresh_refuses_stale_brief_then_force(world):
     a = service.start(world.ctx, world.place, MAIN)
     os.utime(briefs.path(world.ctx.root, a), (world.clock["t"], world.clock["t"]))
     world.clock["t"] += 3600
-    world.tmux.sessions["notes·main"]["activity"] = int(world.clock["t"])
+    world.tmux.sessions["notes/main"]["activity"] = int(world.clock["t"])
     with pytest.raises(AgentError) as e:
         service.start(world.ctx, world.place, MAIN, fresh=True)
     assert e.value.code == AgentError.STALE_BRIEF
     b = service.start(world.ctx, world.place, MAIN, fresh=True, force=True)
     assert b.session_id != a.session_id
-    cmd = argv(world, "notes·main")
+    cmd = argv(world, "notes/main")
     assert "--append-system-prompt-file" in cmd
 
 
@@ -89,7 +89,7 @@ def test_fresh_after_handoff_is_not_stale(world):
     world.clock["t"] += 3600
     p = briefs.path(world.ctx.root, a)
     os.utime(p, (world.clock["t"], world.clock["t"]))             # /handoff wrote it
-    world.tmux.sessions["notes·main"]["activity"] = int(world.clock["t"] + 30)  # its reply
+    world.tmux.sessions["notes/main"]["activity"] = int(world.clock["t"] + 30)  # its reply
     service.start(world.ctx, world.place, MAIN, fresh=True)
 
 
@@ -103,14 +103,14 @@ def test_start_failure_records_error_and_hints_fresh(world):
     assert "--fresh" in str(e.value)
     a = registry.load(world.ctx.root)["notes/main"]
     assert a.state == STOPPED and "No conversation found" in a.last_error
-    assert "notes·main" not in world.tmux.sessions
+    assert "notes/main" not in world.tmux.sessions
 
 
 def test_dead_corpse_is_cleared_on_start(world):
     service.start(world.ctx, world.place, MAIN)
-    world.tmux.sessions["notes·main"]["dead"] = True
+    world.tmux.sessions["notes/main"]["dead"] = True
     service.start(world.ctx, world.place, MAIN)
-    assert world.tmux.sessions["notes·main"]["dead"] is False
+    assert world.tmux.sessions["notes/main"]["dead"] is False
 
 
 def test_archive_refuses_uncommitted_then_succeeds(world):
@@ -149,7 +149,7 @@ def test_broken_worktree_and_repair(world):
 def test_set_mode_restarts_running_with_resume(world):
     a = service.start(world.ctx, world.place, MAIN)
     service.set_mode(world.ctx, world.place, MAIN, "plan")
-    cmd = argv(world, "notes·main")
+    cmd = argv(world, "notes/main")
     assert cmd[cmd.index("--permission-mode") + 1] == "plan"
     assert cmd[cmd.index("--resume") + 1] == a.session_id
     service.set_mode(world.ctx, world.place, MAIN, "default")
@@ -168,14 +168,14 @@ def test_reap_parks_idle_agents(world):
     service.start(world.ctx, world.place, MAIN)
     world.clock["t"] += 3 * DAY + 1
     done = service.reap(world.ctx)
-    assert done == ["parked notes·main"]
+    assert done == ["parked notes/main"]
     assert registry.load(world.ctx.root)["notes/main"].state == PARKED
-    assert "notes·main" not in world.tmux.sessions
+    assert "notes/main" not in world.tmux.sessions
 
 
 def test_reap_never_touches_attached(world):
     service.start(world.ctx, world.place, MAIN)
-    world.tmux.sessions["notes·main"]["attached"] = True
+    world.tmux.sessions["notes/main"]["attached"] = True
     world.clock["t"] += 10 * DAY
     assert service.reap(world.ctx) == []
 
@@ -201,8 +201,8 @@ def test_reap_deletes_idle_scratch(world):
 def test_restore_restarts_active_agents(world):
     a = service.start(world.ctx, world.place, MAIN)
     world.tmux.sessions.clear()                       # reboot
-    assert service.restore(world.ctx) == ["restored notes·main"]
-    cmd = argv(world, "notes·main")
+    assert service.restore(world.ctx) == ["restored notes/main"]
+    cmd = argv(world, "notes/main")
     assert cmd[cmd.index("--resume") + 1] == a.session_id
 
 
@@ -223,7 +223,7 @@ def test_failed_first_start_keeps_no_session_id(world):
     assert registry.load(world.ctx.root)["notes/main"].session_id is None
     world.tmux.die_with = None
     service.start(world.ctx, world.place, MAIN)
-    cmd = argv(world, "notes·main")
+    cmd = argv(world, "notes/main")
     assert "--session-id" in cmd and "--resume" not in cmd
 
 
@@ -236,7 +236,7 @@ def test_failed_fresh_start_keeps_old_session_id(world):
     assert registry.load(world.ctx.root)["notes/main"].session_id == a.session_id
     world.tmux.die_with = None
     service.start(world.ctx, world.place, MAIN)
-    cmd = argv(world, "notes·main")
+    cmd = argv(world, "notes/main")
     assert cmd[cmd.index("--resume") + 1] == a.session_id
 
 
@@ -267,7 +267,7 @@ def test_trust_prompt_on_screen_is_answered_once(world):
 
 def test_connected_reads_the_screen_not_the_scrollback(world):
     service.start(world.ctx, world.place, MAIN)
-    world.tmux.sessions["notes·main"].update(pane=runtime.CONNECTED_SAMPLE + "\nreconnecting",
+    world.tmux.sessions["notes/main"].update(pane=runtime.CONNECTED_SAMPLE + "\nreconnecting",
                                              screen="reconnecting")
     v = [v for v in service.views(world.ctx, check_connected=True) if v.agent.name == MAIN][0]
     assert v.connected is False
@@ -287,7 +287,7 @@ def test_reap_counts_pane_output(world):
     # After /clear the recorded transcript goes quiet; the pane still moves.
     service.start(world.ctx, world.place, MAIN)
     world.clock["t"] += 3 * DAY + 1
-    world.tmux.sessions["notes·main"]["window_activity"] = int(world.clock["t"] - 60)
+    world.tmux.sessions["notes/main"]["window_activity"] = int(world.clock["t"] - 60)
     assert service.reap(world.ctx) == []
     assert registry.load(world.ctx.root)["notes/main"].state == ACTIVE
 
@@ -309,7 +309,7 @@ def test_resume_does_not_make_a_handed_off_brief_stale(world):
 def test_woken_agent_is_not_re_parked_by_the_next_reap(world):
     service.start(world.ctx, world.place, MAIN)
     world.clock["t"] += 4 * DAY
-    assert service.reap(world.ctx) == ["parked notes·main"]
+    assert service.reap(world.ctx) == ["parked notes/main"]
     service.start(world.ctx, world.place, MAIN)                   # Start wakes it
     world.clock["t"] += 600
     assert service.reap(world.ctx) == []
@@ -332,7 +332,7 @@ def test_reap_does_not_turn_a_start_into_brief_activity(world):
 # --- a pane that exited by itself: /exit (status 0) or a crash ----------------
 
 def _exit(world, status):
-    world.tmux.sessions["notes·main"].update(dead=True, exit_status=status,
+    world.tmux.sessions["notes/main"].update(dead=True, exit_status=status,
                                              pane="Error: API went away\n")
 
 
@@ -357,8 +357,8 @@ def test_crash_reads_as_crashed(world):
 def test_reap_clears_a_clean_exit_so_restore_skips_it(world):
     service.start(world.ctx, world.place, MAIN)
     _exit(world, 0)
-    assert service.reap(world.ctx) == ["cleared notes·main"]
-    assert "notes·main" not in world.tmux.sessions
+    assert service.reap(world.ctx) == ["cleared notes/main"]
+    assert "notes/main" not in world.tmux.sessions
     assert registry.load(world.ctx.root)["notes/main"].state == STOPPED
     assert service.restore(world.ctx) == []
 
@@ -368,22 +368,22 @@ def test_reap_leaves_a_crash_in_place(world):
     _exit(world, 3)
     world.clock["t"] += 10 * DAY
     assert service.reap(world.ctx) == []
-    assert world.tmux.sessions["notes·main"]["dead"] is True
+    assert world.tmux.sessions["notes/main"]["dead"] is True
     assert registry.load(world.ctx.root)["notes/main"].state == ACTIVE
 
 
 def test_restore_resumes_a_crashed_agent(world):
     a = service.start(world.ctx, world.place, MAIN)
     _exit(world, 3)
-    assert service.restore(world.ctx) == ["restored notes·main"]
-    assert world.tmux.sessions["notes·main"]["dead"] is False
-    cmd = argv(world, "notes·main")
+    assert service.restore(world.ctx) == ["restored notes/main"]
+    assert world.tmux.sessions["notes/main"]["dead"] is False
+    cmd = argv(world, "notes/main")
     assert cmd[cmd.index("--resume") + 1] == a.session_id
 
 
 def test_restore_clears_a_clean_exit_instead_of_reopening_it(world):
     service.start(world.ctx, world.place, MAIN)
     _exit(world, 0)
-    assert service.restore(world.ctx) == ["cleared notes·main"]
-    assert "notes·main" not in world.tmux.sessions
+    assert service.restore(world.ctx) == ["cleared notes/main"]
+    assert "notes/main" not in world.tmux.sessions
     assert registry.load(world.ctx.root)["notes/main"].state == STOPPED

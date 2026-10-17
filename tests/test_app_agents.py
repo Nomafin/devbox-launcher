@@ -55,9 +55,9 @@ def test_start_and_stop_agent(app_world):
     data = app_world.client.post("/api/agents/notes/main/start").json()
     html = {p["slug"]: p["html"] for p in data["projects"]}["notes/main"]
     assert 'data-state="connected"' in html
-    assert "notes·main" in app_world.tmux.sessions
+    assert "notes/main" in app_world.tmux.sessions
     app_world.client.post("/api/agents/notes/main/stop")
-    assert "notes·main" not in app_world.tmux.sessions
+    assert "notes/main" not in app_world.tmux.sessions
 
 
 def test_new_agent_and_scratch(app_world):
@@ -79,7 +79,7 @@ def test_fresh_with_stale_brief_asks_again(app_world):
     app_world.client.post("/api/agents/notes/main/start")
     a = registry.load(app_world.ctx.root)["notes/main"]
     os.utime(briefs.path(app_world.ctx.root, a), (1, 1))
-    app_world.tmux.sessions["notes·main"]["activity"] = int(app_world.clock["t"])
+    app_world.tmux.sessions["notes/main"]["activity"] = int(app_world.clock["t"])
     r = app_world.client.post("/api/agents/notes/main/fresh").json()
     html = {p["slug"]: p["html"] for p in r["projects"]}["notes/main"]
     assert "Fresh anyway" in html
@@ -161,7 +161,7 @@ def test_corrupt_registry_still_renders_the_page(app_world):
 
 def test_clean_exit_row_is_stopped_not_failed(app_world):
     app_world.client.post("/api/agents/notes/main/start")
-    app_world.tmux.sessions["notes·main"].update(dead=True, exit_status=0)
+    app_world.tmux.sessions["notes/main"].update(dead=True, exit_status=0)
     html = rows(app_world)["notes/main"]
     assert 'data-state="stopped"' in html and "Start failed" not in html
     assert "Crashed" not in html and "Show output" not in html
@@ -169,7 +169,7 @@ def test_clean_exit_row_is_stopped_not_failed(app_world):
 
 def test_crash_row_is_red_with_exit_code_and_output(app_world):
     app_world.client.post("/api/agents/notes/main/start")
-    app_world.tmux.sessions["notes·main"].update(dead=True, exit_status=3,
+    app_world.tmux.sessions["notes/main"].update(dead=True, exit_status=3,
                                                  pane="Error: API went away\n")
     html = rows(app_world)["notes/main"]
     assert 'data-state="failed"' in html and "Crashed (exit 3)" in html

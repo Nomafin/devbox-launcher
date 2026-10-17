@@ -9,7 +9,7 @@ import argparse
 import json
 import sys
 from . import service
-from .model import MAIN, AgentError
+from .model import MAIN, SEP, AgentError
 
 TARGETED = ("resolve", "new", "start", "stop", "park", "archive", "mode", "brief-status")
 
@@ -110,7 +110,7 @@ def _run(ctx, args, extra) -> tuple[object, str]:
         except AgentError as exc:
             if exc.code != AgentError.UNKNOWN:
                 raise
-            display = f"{place.slug}·{name}"           # a wrapper's dry run shows what would be created
+            display = f"{place.slug}{SEP}{name}"           # a wrapper's dry run shows what would be created
             if args.json:
                 exc.display = display                  # main() puts it in the error object
             else:

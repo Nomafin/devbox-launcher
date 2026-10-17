@@ -7,16 +7,16 @@ Failure modes seen in practice, with the signature that identifies each one.
 ```bash
 agentctl ls                                   # every agent, its state and idle time
 tmux -u -L agents ls                          # what is really running
-tmux -u -L agents capture-pane -t '=<project>·<name>:' -p | tail -20
+tmux -u -L agents capture-pane -t '=<project>/<name>:' -p | tail -20
 journalctl --user -u agents-reap -u agents-restore
 ```
 
 Use `-u` on every `tmux -L agents` command. On a box whose shells run with
 `LANG=C` (common on containers and minimal images), tmux does not otherwise
-assume UTF-8: the `·` in session names comes back as `_`, so targets never
-match, and an attach without it shows Claude's output garbled. The `=` and the
-trailing `:` make the target exact, so `notes·drafts` cannot hit
-`notes·drafts2`.
+assume UTF-8, so an attach without it shows Claude's output garbled (agent
+names are ASCII and unaffected). The `=` and the
+trailing `:` make the target exact, so `notes/drafts` cannot hit
+`notes/drafts2`.
 
 `agentctl ls` marks an agent `running`, `crashed`, `failed` (its last start
 failed; the reason is on the page), `broken` (worktree missing), or its
@@ -70,7 +70,7 @@ this recurs on its own schedule rather than after any change you made.
 ## An agent is *Not connected* or blank
 
 Capture its pane (above). If it shows a trust or permission prompt, attach and
-answer it: `tmux -u -L agents attach -t '=<project>·<name>'`. If it says
+answer it: `tmux -u -L agents attach -t '=<project>/<name>'`. If it says
 `Workspace not trusted`, trust seeding did not take — check `~/.claude.json`.
 A pane that shows Claude running normally but no `/remote-control is active`
 line is usually the login (above) or a network blip: Stop, then Start.
@@ -191,7 +191,7 @@ The chip shows what the *next* Start uses on a stopped row, and what the agent
 was started with on a running one. The mode is on the command line:
 
 ```bash
-ps -eo args | grep -o -- "--remote-control <project>·<name>.*--permission-mode [a-zA-Z]*"
+ps -eo args | grep -o -- "--remote-control <project>/<name>.*--permission-mode [a-zA-Z]*"
 ```
 
 **Default (settings)** passes no flag at all, so `defaultMode` in

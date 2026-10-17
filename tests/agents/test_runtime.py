@@ -24,7 +24,7 @@ def agent(**kw):
 
 def test_claude_command_quotes_display_name(tmp_path):
     argv = shlex.split(runtime.claude_command(agent(), fresh=True, seed=tmp_path / "s.md"))
-    assert argv[:5] == ["claude", "--remote-control", "notes-site·drafts", "-n", "notes-site·drafts"]
+    assert argv[:5] == ["claude", "--remote-control", "notes-site/drafts", "-n", "notes-site/drafts"]
     assert argv[argv.index("--session-id") + 1] == "sid-1"
     assert argv[argv.index("--append-system-prompt-file") + 1] == str(tmp_path / "s.md")
     assert "--resume" not in argv and "--permission-mode" not in argv
@@ -44,10 +44,10 @@ def test_claude_command_extra_on_fresh():
 
 
 def test_start_and_sessions(tmp_path, tmux):
-    runtime.start(tmp_path, "notes·drafts", "/p/wt", "claude", {"AGENT_NAME": "notes/drafts"}, tmux)
-    s = runtime.sessions(tmp_path, tmux)["notes·drafts"]
+    runtime.start(tmp_path, "notes/drafts", "/p/wt", "claude", {"AGENT_NAME": "notes/drafts"}, tmux)
+    s = runtime.sessions(tmp_path, tmux)["notes/drafts"]
     assert (s.created, s.attached, s.dead) == (1000, False, False)
-    assert tmux.sessions["notes·drafts"]["env"] == {"AGENT_NAME": "notes/drafts"}
+    assert tmux.sessions["notes/drafts"]["env"] == {"AGENT_NAME": "notes/drafts"}
     new = next(c for c in tmux.calls if "new-session" in c)
     assert new[:6] == ["tmux", "-u", "-L", "agents", "-f",
                        str(tmp_path / ".config" / "agents" / "tmux.conf")]
@@ -105,18 +105,18 @@ def test_dead_pane_is_dead(tmp_path, tmux):
 
 
 def test_pane_targets_exact_session_only(tmp_path, tmux):
-    runtime.start(tmp_path, "x·drafts2", "/", "claude", {}, tmux)
-    assert runtime.pane(tmp_path, "x·drafts", tmux) == ""
+    runtime.start(tmp_path, "x/drafts2", "/", "claude", {}, tmux)
+    assert runtime.pane(tmp_path, "x/drafts", tmux) == ""
     cap = [c for c in tmux.calls if "capture-pane" in c][-1]
-    assert cap[cap.index("-t") + 1] == "=x·drafts:"
-    assert runtime.pane(tmp_path, "x·drafts2", tmux) == runtime.CONNECTED_SAMPLE
+    assert cap[cap.index("-t") + 1] == "=x/drafts:"
+    assert runtime.pane(tmp_path, "x/drafts2", tmux) == runtime.CONNECTED_SAMPLE
 
 
 def test_trust_prompt_targets_exact_pane(tmp_path, tmux):
-    runtime.start(tmp_path, "notes·drafts", "/", "claude", {}, tmux)
-    runtime.answer_trust_prompt(tmp_path, "notes·drafts", tmux)
+    runtime.start(tmp_path, "notes/drafts", "/", "claude", {}, tmux)
+    runtime.answer_trust_prompt(tmp_path, "notes/drafts", tmux)
     args = tmux.keys[-1]
-    assert args[args.index("-t") + 1] == "=notes·drafts:"
+    assert args[args.index("-t") + 1] == "=notes/drafts:"
     assert args[-2:] == ["Up", "Enter"]
 
 

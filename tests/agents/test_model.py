@@ -13,7 +13,7 @@ def make(**kw):
 def test_names():
     a = make()
     assert a.key == "notes-site/drafts"
-    assert a.display == "notes-site·drafts"
+    assert a.display == "notes-site/drafts"
     assert a.has_worktree and not a.is_main
 
 

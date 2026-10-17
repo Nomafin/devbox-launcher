@@ -487,7 +487,7 @@ _PAGE = """<!doctype html>
 {banner}
 <div id="list">{rows}</div>
 <p class="hint">A running agent appears in the Claude app as
-<code>&lt;project&gt;·&lt;name&gt;</code>.</p>
+<code>&lt;project&gt;/&lt;name&gt;</code>.</p>
 </div>
 {runbox}
 <script>{js}</script>

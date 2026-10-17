@@ -24,7 +24,7 @@ Never call the launcher's /run endpoints yourself (curl, a browser, or
 anything else). They exist so the user runs what you may not; calling them
 would sidestep the permission check.
 
-Sessions here are named agents (`<project>·<name>`, e.g. `notes·drafts`).
+Sessions here are named agents (`<project>/<name>`, e.g. `notes/drafts`).
 Each has a brief at `$AGENT_BRIEF`: keep it current as you finish meaningful
 work, and rewrite it fully when the user runs /handoff. A new conversation for
 an agent is started with Fresh (the launcher's **Fresh conversation**, or

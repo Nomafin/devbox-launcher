@@ -127,7 +127,7 @@ A directory that is both is treated as a repo.
 ## Agents
 
 An **agent** is one long-lived Claude conversation with a name. It shows up
-in the Claude app, on the page and in tmux as `<project>·<name>`, and the
+in the Claude app, on the page and in tmux as `<project>/<name>`, and the
 launcher and `agentctl` are two front ends to the same registry
 (`~/.config/agents/registry.json`) — anything done in one shows in the other.
 
@@ -147,7 +147,7 @@ A row's button is **Start** (**Resume** when it has a conversation to come
 back to), **Stop** when running, or **Recreate worktree** when the worktree has
 been deleted from disk. Start takes a few seconds while it waits for Claude to
 say `/remote-control is active`; then tap **Open in the Claude app**, or pick
-`<project>·<name>` in the app.
+`<project>/<name>` in the app.
 
 | Rail | Means |
 |---|---|
@@ -240,7 +240,7 @@ terminal, attach to its tmux session:
 
 ```bash
 agentctl start notes/drafts
-tmux -u -L agents attach -t '=notes·drafts'
+tmux -u -L agents attach -t '=notes/drafts'
 ```
 
 `agentctl` exits non-zero with a reason on stderr, and the exit code says what
@@ -261,7 +261,7 @@ wrapper on your laptop can turn "the project of this directory" into an agent
 over SSH: map the local directory to the box's, run
 `ssh box agentctl resolve --json --dir <dir> <name>` (exit 3 means "would
 create" — ask first, then `start --create`), and then
-`ssh -t box tmux -u -L agents attach -t '=<project>·<name>'` (or mosh). This
+`ssh -t box tmux -u -L agents attach -t '=<project>/<name>'` (or mosh). This
 repo does not ship such a wrapper; the reaper never parks a session with a
 terminal attached.
 

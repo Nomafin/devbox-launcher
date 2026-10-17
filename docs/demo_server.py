@@ -156,9 +156,9 @@ def build_world(tmux: FakeTmux) -> service.Ctx:
     service.new(ctx, place("webapp"), "search")
     set_mission(ctx, "webapp/search", "Replace the search box with full-text search")
     service.start(ctx, place("webapp"), "search")
-    tmux.sessions["webapp·search"].update(
+    tmux.sessions["webapp/search"].update(
         dead=True, status=1,
-        pane=tmux.sessions["webapp·search"]["pane"] + "\nError: ENOSPC: no space left on device\n")
+        pane=tmux.sessions["webapp/search"]["pane"] + "\nError: ENOSPC: no space left on device\n")
     at(60)
     tmux.next_pane = "Error: You must be logged in to use Remote Control.\n"
     tmux.next_dead = 1

@@ -11,7 +11,7 @@ def agent():
 def test_ensure_writes_template_once(tmp_path):
     p = briefs.ensure(tmp_path, agent())
     assert p == tmp_path / "briefs" / "notes" / "drafts.md"
-    assert p.read_text().startswith("# notes·drafts\n")
+    assert p.read_text().startswith("# notes/drafts\n")
     for section in briefs.SECTIONS:
         assert f"## {section}\n" in p.read_text()
     p.write_text("mine")
@@ -42,9 +42,9 @@ def test_not_stale_within_grace(tmp_path):
 
 def test_seed_has_preamble_and_brief(tmp_path):
     p = briefs.ensure(tmp_path, agent())
-    p.write_text("# notes·drafts\n\n## Mission\n\nAlumni.\n")
+    p.write_text("# notes/drafts\n\n## Mission\n\nAlumni.\n")
     seed = briefs.write_seed(tmp_path, agent()).read_text()
-    assert "You are agent `notes·drafts`" in seed
+    assert "You are agent `notes/drafts`" in seed
     assert str(p) in seed
     assert seed.rstrip().endswith("Alumni.")
 

@@ -11,7 +11,7 @@ exists, say that this session is not a named agent and stop.
 
 Replace the whole file with exactly these sections:
 
-# <agent name, e.g. notes·drafts>
+# <agent name, e.g. notes/drafts>
 ## Mission
 One or two lines: what this agent is for. Keep the existing mission unless the
 user changed it in this conversation.

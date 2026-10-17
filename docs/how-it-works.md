@@ -41,7 +41,7 @@ behind a command line.
 
 An agent is one long-lived interactive Claude conversation with a name. Its
 key is `<project>/<name>`, and its display name — the tmux session and the
-name in the Claude app — is `<project>·<name>`.
+name in the Claude app — is `<project>/<name>`.
 
 - **main** works in the project's own checkout (a group's `claude-project/`).
   Every project has one, created the first time it is used. It can be stopped
@@ -65,12 +65,12 @@ session settles, so a second start waits and then finds it running.
 ## Starting and stopping
 
 **Start** seeds workspace trust in `~/.claude.json` (see SECURITY.md), then
-creates a detached tmux session `<project>·<name>` on socket
+creates a detached tmux session `<project>/<name>` on socket
 `tmux -u -L agents` (config `~/.config/agents/tmux.conf`), in the agent's
 workdir, running
 
 ```
-claude --remote-control <project>·<name> -n <project>·<name> \
+claude --remote-control <project>/<name> -n <project>/<name> \
        --resume <id> | --session-id <new id> --append-system-prompt-file <seed>
        [--permission-mode <mode>]
 ```
@@ -93,9 +93,9 @@ resumes it with `--resume`. A conversation that can no longer be resumed fails
 the start with a hint to start fresh.
 
 `-u` matters on every `tmux -L agents` call: on a box running `LANG=C`, tmux
-does not otherwise assume UTF-8 and the `·` in session names comes back
-mangled. Targets are always exact (`=<name>:`), so `notes·drafts` can never
-hit `notes·drafts2`.
+does not otherwise assume UTF-8 and Claude's pane output comes back
+mangled. Targets are always exact (`=<name>:`), so `notes/drafts` can never
+hit `notes/drafts2`.
 
 ## Briefs, /handoff and Fresh
 

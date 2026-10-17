@@ -18,7 +18,7 @@ from .agents import places as _places
 from .agents import registry as _registry
 from .agents import runtime as _runtime
 from .agents import service as _service
-from .agents.model import ARCHIVED, MAIN, PARKED, SCRATCH, AgentError
+from .agents.model import ARCHIVED, MAIN, PARKED, SCRATCH, SEP, AgentError
 from .config import base_dir as _base_dir
 from .config import run_user as _run_user
 
@@ -311,7 +311,7 @@ def create_app(base_dir_fn=None, ctx_fn=None, svc=_service, trust=_trust, disc=_
     @app.get("/api/pane/{project}/{name}")
     def api_pane(project: str, name: str):
         c = ctx()
-        return {"lines": _runtime.tail(c.home, f"{project}·{name}", c.run)}
+        return {"lines": _runtime.tail(c.home, f"{project}{SEP}{name}", c.run)}
 
     # The launcher's only write into a repo, so it is a route of its own rather
     # than something Start does silently on your behalf.

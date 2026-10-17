@@ -10,7 +10,7 @@ from dataclasses import asdict, dataclass, fields
 
 from ..discovery import slugify
 
-SEP = "·"
+SEP = "/"
 MAIN = "main"
 AGENT = "agent"
 SCRATCH = "scratch"

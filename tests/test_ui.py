@@ -108,7 +108,7 @@ def test_node_parses_the_client_script():
 
 def test_agent_row_states():
     from launcher import ui
-    html = ui.agent_row(key="notes/drafts", name="drafts", display="notes·drafts", state="stopped",
+    html = ui.agent_row(key="notes/drafts", name="drafts", display="notes/drafts", state="stopped",
                         status="", running=False, parked=True, scratch=False, archivable=True,
                         resumable=True, broken=False, mode=None, mission="Alumni")
     assert 'class="row agent parked"' in html and "Resume" in html and "Archive" in html

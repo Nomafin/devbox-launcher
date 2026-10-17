@@ -43,8 +43,8 @@ def conf(home) -> Path:
 def tmux(home, *args: str) -> list[str]:
     # -f only matters when this call starts the server; passing it every time
     # means whichever call comes first starts it configured.
-    # -u: the box's shells run with LANG=C, where tmux prints `·` as `_` in
-    # list-sessions output and names would never match.
+    # -u: the box's shells run with LANG=C; names are ASCII now, but agents'
+    # panes print UTF-8, which tmux would otherwise mangle.
     return ["tmux", "-u", "-L", SOCKET, "-f", str(conf(home)), *args]
 
 
@@ -125,7 +125,7 @@ def pane(home, name: str, run: Runner) -> str:
     resumed conversation redraws its old history, so anything that decides on
     the agent's current state reads screen() instead."""
     # "=name:" is the exact session's current pane; a bare name would fall back
-    # to prefix matching, so `notes·drafts` could read `notes·drafts2`.
+    # to prefix matching, so `notes/drafts` could read `notes/drafts2`.
     return run(tmux(home, "capture-pane", "-J", "-p", "-S", "-", "-t", f"={name}:")).stdout or ""
 
 
