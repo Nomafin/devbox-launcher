@@ -1,8 +1,8 @@
-"""The git side of project instances.
+"""The git side of agents.
 
-An instance works in a git worktree under the project, so several sessions can
-edit the same repo at once without fighting over one checkout. Every git call
-the launcher makes for instances lives here; nothing else shells out to git.
+An agent other than main works in a git worktree under the project, so several
+sessions can edit the same repo at once without fighting over one checkout.
+Every git worktree call the launcher makes lives here.
 
 Removal never forces. The launcher is used from a phone, where a mis-tap is
 easy and uncommitted work is not recoverable, so a worktree with anything of
@@ -47,16 +47,19 @@ def _has_branch(project_cwd, name: str, run: Runner) -> bool:
                 f"refs/heads/{name}"]).returncode == 0
 
 
-def create(project_cwd, name: str, run: Runner = default_run) -> str | None:
-    """Add the worktree on branch `name`. None on success, else git's reason.
+def create(project_cwd, name: str, run: Runner = default_run,
+           branch: str | None = None) -> str | None:
+    """Add the worktree `name` on `branch` (default: `name`). None on success,
+    else git's reason.
 
     The branch is created off whatever the project has checked out, unless it
-    already exists — asking for an instance named after an existing branch
-    means working on that branch, not refusing.
+    already exists — asking for a worktree on an existing branch means working
+    on that branch, not refusing.
     """
+    branch = branch or name
     target = str(path(project_cwd, name))
     args = ["git", "-C", str(project_cwd), "worktree", "add"]
-    args += [target, name] if _has_branch(project_cwd, name, run) else ["-b", name, target]
+    args += [target, branch] if _has_branch(project_cwd, branch, run) else ["-b", branch, target]
     result = run(args)
     if result.returncode != 0:
         return _error(result, "git could not create the worktree.")

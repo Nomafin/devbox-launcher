@@ -2,7 +2,6 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from .worktrees import path as worktree_path
 
 
 @dataclass(frozen=True)
@@ -46,38 +45,3 @@ def discover_projects(base_dir: Path) -> list[Project]:
         projects.append(Project(slug=slug, name=child.name, path=child, launch_path=launch_path))
     return projects
 
-
-def instance_of(project: Project, name: str) -> Project:
-    """The `Project` for one instance of `project`.
-
-    The single construction site, so `resolve_slug` and a caller that already
-    holds the parent (the page's `snapshot()`, which just walked the tree once
-    to find it) build the exact same thing rather than two copies that could
-    drift apart.
-    """
-    return Project(slug=f"{project.slug}--{name}", name=name,
-                   path=project.path, launch_path=worktree_path(project.cwd, name))
-
-
-def resolve_slug(base_dir: Path, slug: str, instances: dict | None = None) -> Project | None:
-    """The project — or instance — a slug names.
-
-    Instances come from what the launcher recorded, never from walking the
-    tree: a worktree the Claude app created for one of its own sessions must
-    not turn into a row.
-    """
-    for project in discover_projects(base_dir):
-        if project.slug == slug:
-            return project
-    if not instances:
-        return None
-    # Not `instances.split`: that module imports slugify from here.
-    project_slug, sep, name = slug.partition("--")
-    if not sep or not project_slug or not name:
-        return None
-    if name not in instances.get(project_slug, []):
-        return None
-    parent = resolve_slug(base_dir, project_slug)
-    if parent is None:
-        return None
-    return instance_of(parent, name)

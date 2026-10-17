@@ -67,11 +67,6 @@ h1 { font-size: 1.375rem; font-weight: 600; letter-spacing: -0.01em; margin: 0; 
 .row[data-state="ready"], .row[data-state="starting"] { border-left-color: var(--wait); }
 .row[data-state="failed"] { border-left-color: var(--dead); }
 
-/* An instance belongs to the row above it: indented, and a step quieter, so
-   the list still reads as one project per block. */
-.row.instance { margin-left: 1.25rem; }
-.row.instance .name { font-size: .9375rem; }
-
 .head { display: flex; align-items: center; justify-content: space-between; gap: .75rem; }
 .name { font-size: 1.0625rem; font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
 .meta { margin-top: .25rem; font-size: .8125rem; display: flex; flex-wrap: wrap;
@@ -88,8 +83,6 @@ h1 { font-size: 1.375rem; font-weight: 600; letter-spacing: -0.01em; margin: 0; 
 .why { margin-top: .375rem; font-size: .8125rem; color: var(--dead);
        overflow-wrap: anywhere; }
 .age { color: var(--ink-dim); font-size: .8125rem; font-variant-numeric: tabular-nums; }
-.row[data-state="stuck"] { border-left-color: var(--dead); }
-.row[data-state="stuck"] .state { color: var(--dead); }
 
 /* Amber, not coral: a repo that needs its remote renamed is not a failure, it
    is something to fix before you tap Start and wait seven seconds for nothing. */
@@ -102,7 +95,7 @@ h1 { font-size: 1.375rem; font-weight: 600; letter-spacing: -0.01em; margin: 0; 
 
 /* Ghosted and full-width: recovery is a deliberate second choice, not a peer
    of the Stop button it sits beneath. */
-form.fix, form.fresh, form.gap { margin: .625rem 0 0; }
+form.fix, form.gap { margin: .625rem 0 0; }
 .note { margin-top: .375rem; font-size: .75rem; color: var(--ink-dim); }
 /* Not `.link` — that name is taken by the login page's authorize URL, which is
    monospace, and .btn.link would inherit its family. */
@@ -144,7 +137,7 @@ form.fix, form.fresh, form.gap { margin: .625rem 0 0; }
         font-family: var(--mono); font-size: .6875rem; line-height: 1.4;
         color: var(--ink-dim); white-space: pre; overflow-x: auto; }
 
-/* A live listener's whole point is the link, so it gets a row of its own and a
+/* A live agent's whole point is the link, so it gets a row of its own and a
    full-width target rather than competing with the button for space. */
 .open {
   display: block; margin-top: .75rem; padding: .75rem .875rem;
@@ -161,7 +154,7 @@ form.act { margin: 0; flex: none; }
   border-radius: .375rem; border: 1px solid var(--steel);
   background: var(--steel); color: var(--steel-ink); cursor: pointer;
 }
-/* Ghosted, not red: stopping a listener is routine and keeps the
+/* Ghosted, not red: stopping an agent is routine and keeps the
    conversation, and coral is spoken for — it means a state, not a control.
    Four red Stop buttons shouted louder than the one row that had failed. */
 .btn.stop { background: transparent; color: var(--ink-dim); }
@@ -170,7 +163,7 @@ form.act { margin: 0; flex: none; }
 :focus-visible { outline: 2px solid var(--live); outline-offset: 2px; }
 
 /* The only motion on the page, and it answers a tap: it marks the seconds a
-   listener takes to settle, which is otherwise indistinguishable from a
+   session takes to settle, which is otherwise indistinguishable from a
    button that did nothing. */
 .row[data-pending] { border-left-color: var(--ink-dim); animation: breathe 1.4s ease-in-out infinite; }
 @keyframes breathe { 50% { border-left-color: var(--edge); } }
@@ -261,6 +254,11 @@ dialog.runbox::backdrop { background: rgba(0, 0, 0, .6); }
             gap: .75rem; margin-bottom: .75rem; }
 .dlg-head form { margin: 0; }
 .dlg-head .btn { min-width: 0; }
+.row.agent { margin-left: 14px; }
+.row.agent.parked { display: none; }
+body.show-parked .row.agent.parked { display: block; opacity: .7; }
+.row.project { border-left-color: transparent; padding-bottom: 4px; }
+.mission { font-size: 13px; color: var(--ink-dim); margin-top: 4px; }
 """
 
 # Progressive enhancement: every control is a real form that works without
@@ -292,7 +290,7 @@ _JS = r"""
       // Nor while its output is open: a poll every 20s would otherwise shut the
       // pane you are in the middle of reading.
       if (row && row.querySelector('details.out[open]')) return;
-      // Nor while its "New instance" disclosure is open: the same poll would
+      // Nor while its "New agent" disclosure is open: the same poll would
       // otherwise snap it shut and, worse, wipe a name half-typed on a phone.
       // Belt and braces below — either alone would do, but a background poll
       // eating someone's typing is exactly the failure this guards against.
@@ -328,6 +326,8 @@ _JS = r"""
     if (count) count.textContent = data.count;
     var usage = document.getElementById('usage');
     if (usage) usage.textContent = data.usage || '';
+    var parked = document.getElementById('parked');
+    if (parked) { parked.textContent = 'Parked (' + (data.parked || 0) + ')'; parked.hidden = !data.parked; }
     // The sign-out banner and the empty state change what the page means, not
     // just a row, so hand those to a reload rather than patching them here.
     if (data.signedIn === false || (data.projects || []).length === 0) location.reload();
@@ -344,7 +344,7 @@ _JS = r"""
     if (why) why.remove();
     // Sent as a body, not just a slug in the URL: Create carries the typed
     // name as a form field, and an empty body costs nothing for the forms
-    // that have none (Start, Stop, Remove).
+    // that have none (Start, Stop, Park).
     fetch(form.dataset.api, { method: 'POST', headers: { 'Accept': 'application/json' },
                               body: new URLSearchParams(new FormData(form)) })
       .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
@@ -353,7 +353,7 @@ _JS = r"""
         // still carrying data-pending, on the assumption its own response is
         // seconds away and authoritative. This *is* that response, so the
         // row must stop looking in-flight before it is asked to re-render —
-        // otherwise a successful Remove leaves a disabled ghost row behind,
+        // otherwise a successful Archive leaves a disabled ghost row behind,
         // a successful Create freezes its parent row forever, and schedule()
         // never sees the busy row clear, polling at 4s instead of 20s for
         // good.
@@ -374,19 +374,20 @@ _JS = r"""
   }
 
   list.addEventListener('submit', function (event) {
-    var form = event.target.closest('form.act, form.fix, form.fresh, form.gap');
+    var form = event.target.closest('form.act, form.fix, form.gap');
     if (!form || !form.dataset.api) return;
     event.preventDefault();
-    // Start fresh, Create and Remove all take seconds — a worktree add, or the
-    // full launch() path, or tmux settling — so they show the same pending
-    // state as Start/Stop; the remote rename and the parallel toggle return in
-    // milliseconds and need none. ".gap" is a styling class shared with
-    // ".fix" (same amount of breathing room above the button); it is not the
-    // same behaviour, which is why it is not just called "fix" too.
+    // Fresh, Park, Archive, Create and Quick chat all take seconds — a
+    // worktree add or remove, or a session settling — so they show the same
+    // pending state as Start/Stop; the remote rename and a mode change on a
+    // stopped agent return in milliseconds and need none. ".gap" is a styling
+    // class shared with ".fix" (same amount of breathing room above the
+    // button); it is not the same behaviour, which is why it is not just
+    // called "fix" too.
     if (form.classList.contains('fix')) { fix(form); } else { act(form); }
   });
 
-  // The remote rename and the parallel toggle. Same shape as act(), but there
+  // The remote rename and a stopped agent's mode. Same shape as act(), but there
   // is no pending state to show on the row: both return in milliseconds and
   // the reply redraws it.
   function fix(form) {
@@ -407,7 +408,7 @@ _JS = r"""
     if (!details.matches || !details.matches('details.out') || !details.open) return;
     var pre = details.querySelector('.tail');
     pre.textContent = 'Loading…';
-    fetch('/api/pane/' + encodeURIComponent(details.dataset.slug),
+    fetch('/api/pane/' + details.dataset.slug.split('/').map(encodeURIComponent).join('/'),
           { headers: { 'Accept': 'application/json' } })
       .then(function (r) { return r.json(); })
       .then(function (data) {
@@ -424,8 +425,8 @@ _JS = r"""
   }
 
   // Poll briskly only while something is actually in motion, and not at all
-  // behind a hidden tab. "ready" is NOT motion: a registered listener waiting
-  // for the app rests there indefinitely, and treating it as busy meant one
+  // behind a hidden tab. "ready" is NOT motion: an agent not yet connected
+  // rests there indefinitely, and treating it as busy meant one
   // idle project kept the box answering every four seconds forever.
   function schedule() {
     clearTimeout(timer);
@@ -480,13 +481,13 @@ _PAGE = """<!doctype html>
 <div class="wrap">
 <header>
   <h1>devbox sessions</h1>
-  <span class="count" id="count">{count}</span>
+  <span class="count" id="count">{count}</span>{parked}
 </header>
 <p class="usage" id="usage">{usage}</p>
 {banner}
 <div id="list">{rows}</div>
-<p class="hint">A running project appears in the Claude app as
-<code>devbox-&lt;name&gt;</code>.</p>
+<p class="hint">A running agent appears in the Claude app as
+<code>&lt;project&gt;·&lt;name&gt;</code>.</p>
 </div>
 {runbox}
 <script>{js}</script>
@@ -494,61 +495,7 @@ _PAGE = """<!doctype html>
 </html>
 """
 
-_ROW = """<div class="row{cls_row}" data-slug="{slug}" data-state="{state}">
-  <div class="head">
-    <div class="name">{name}</div>
-    <form class="act" method="post" action="/{action}/{slug}" data-slug="{slug}"
-          data-api="/api/{action}/{slug}" data-label="{label}"
-          data-pending-label="{pending}">
-      <button class="btn {cls}" type="submit">{label}</button>
-    </form>
-  </div>
-  <div class="meta">{status}{age}{mode}<span class="id">{ident}</span></div>{why}{retry}{fresh}{remove}{permission}{parallel}{new}{warn}{link}{output}{run}
-</div>"""
-
-# Stop-then-Start is what you always did next to a broken listener, so one
-# control does both. It sits under the reason rather than in the head, where
-# Stop keeps its single unambiguous meaning.
-_RETRY = """
-  <form class="fix" method="post" action="/retry/{slug}"
-        data-api="/api/retry/{slug}" data-slug="{slug}">
-    <button class="btn ghost" type="submit">Retry</button>
-  </form>"""
-
-# Only rendered where a recorded conversation exists to discard — otherwise
-# Start already starts fresh and this would be a control that does nothing.
-_FRESH = """
-  <form class="fresh" method="post" action="/start-fresh/{slug}"
-        data-api="/api/start-fresh/{slug}" data-slug="{slug}">
-    <button class="btn quiet" type="submit">Start fresh — new conversation</button>
-  </form>"""
-
-# Removal takes the worktree with it, so it sits apart from Stop and refuses
-# rather than forcing — see worktrees.blockers. It stops the listener and
-# runs `git worktree remove`, seconds of work, so it goes through act() (the
-# ".gap" class), not fix(), and gets its own pending label.
-_REMOVE = """
-  <form class="gap" method="post" action="/instances/{slug}/remove"
-        data-api="/api/instances/{slug}/remove" data-slug="{slug}"
-        data-label="Remove instance" data-pending-label="Removing…">
-    <button class="btn quiet" type="submit">Remove instance</button>
-  </form>"""
-
-# The spawn mode the next Start uses. Worktree mode gives every session the
-# app opens its own checkout, so two can edit code at once; it never resumes,
-# which the note says because Start otherwise does.
-_PARALLEL = """
-  <form class="fix" method="post" action="/parallel/{slug}"
-        data-api="/api/parallel/{slug}" data-slug="{slug}" data-parallel="{state}">
-    <input type="hidden" name="on" value="{next}">
-    <button class="btn quiet" type="submit">Parallel sessions: {state}</button>
-  </form>{note}"""
-
-_PARALLEL_NOTE = """
-  <div class="note">Each session opened from the app gets its own git worktree.
-  Starts a new conversation rather than resuming.</div>"""
-
-# The permission mode the listener's sessions run in. The Claude app has no
+# The permission mode the agent's session runs in. The Claude app has no
 # control over it and the CLI fixes it at startup, so a session stuck asking
 # for permission on a phone could only be fixed from a terminal — this is that
 # control. Summary-first so the current mode reads without opening anything:
@@ -562,8 +509,8 @@ _MODE = """
 
 # One form per mode rather than a <select>: a select on a phone is a spinner
 # and two more taps, and these are four fixed choices.
-_MODE_CHIP = """<form class="{cls}" method="post" action="/mode/{slug}"
-      data-api="/api/mode/{slug}" data-slug="{slug}" data-mode="{mode}"
+_MODE_CHIP = """<form class="{cls}" method="post" action="/agents/{slug}/mode"
+      data-api="/api/agents/{slug}/mode" data-slug="{slug}" data-mode="{mode}"
       data-label="{label}" data-pending-label="Switching…">
       <input type="hidden" name="mode" value="{mode}">
       <button class="btn chip{on}" type="submit">{label}</button>
@@ -571,34 +518,18 @@ _MODE_CHIP = """<form class="{cls}" method="post" action="/mode/{slug}"
 
 # The CLI's mode names are not what anyone calls them out loud.
 _MODE_LABELS = {
-    "default": "Ask",
+    # Records nothing: settings.json's defaultMode (or the CLI's own) applies.
+    "default": "Default (settings)",
     "acceptEdits": "Accept edits",
     "auto": "Auto",
     "plan": "Plan",
 }
 
 # Said on a running row only, because that is the only place it costs anything:
-# the listener has to come back up before the new mode is in force.
-_MODE_RESTART_NOTE = ("Changing this restarts the listener and resumes the "
+# the agent has to come back up before the new mode is in force.
+_MODE_RESTART_NOTE = ("Changing this restarts the agent and resumes the "
                       "same conversation.")
-_MODE_NOTE = "Used by every session this listener opens."
-
-# Its own disclosure: an instance is a new worktree and a new listener, which
-# is not something to create by brushing a button while scrolling.
-# `git worktree add` plus the full launch() path takes several seconds — the
-# same order as Start — so this goes through act() (the ".gap" class), not
-# fix(), and gets its own pending label rather than looking merely stuck.
-_NEW_INSTANCE = """
-  <details class="new">
-    <summary>New instance</summary>
-    <form class="gap" method="post" action="/instances/{slug}"
-          data-api="/api/instances/{slug}" data-slug="{slug}"
-          data-label="Create" data-pending-label="Creating…">
-      <input name="name" autocapitalize="off" autocorrect="off" spellcheck="false"
-             autocomplete="off" placeholder="name, e.g. fix-auth">
-      <button class="btn quiet" type="submit">Create</button>
-    </form>
-  </details>"""
+_MODE_NOTE = "Used the next time this agent starts."
 
 # A session you forgot nine days ago should not read like one you started a
 # minute ago, and the number is only useful next to the state it qualifies.
@@ -647,90 +578,151 @@ _RUN_STATE = """<a class="runstate" href="/run/{slug}" data-run="{slug}" data-na
 _WHY = """
   <div class="why">{reason}</div>"""
 
+_PROJECT_ROW = """<div class="row project" data-slug="{slug}" data-state="{state}">
+  <div class="head">
+    <div class="name">{name}</div>
+  </div>
+  <div class="meta"><span class="id">{ident}</span></div>{warn}{new}{run}
+</div>"""
+
+_NEW_AGENT = """
+  <details class="new">
+    <summary>New agent</summary>
+    <form class="gap" method="post" action="/projects/{slug}/new"
+          data-api="/api/projects/{slug}/new" data-pending-label="Creating…">
+      <input name="name" placeholder="name, e.g. drafts" autocapitalize="off"
+             autocomplete="off" spellcheck="false" required>
+      <button class="btn" type="submit">Create</button>
+    </form>
+  </details>
+  <form class="gap" method="post" action="/projects/{slug}/scratch"
+        data-api="/api/projects/{slug}/scratch" data-pending-label="Starting…">
+    <button class="btn" type="submit">Quick chat</button>
+  </form>"""
+
+_AGENT_ROW = """<div class="row agent{cls}" data-slug="{key}" data-state="{state}">
+  <div class="head">
+    <div class="name">{name}</div>
+    <form class="act" method="post" action="/agents/{path}/{action}"
+          data-api="/api/agents/{path}/{action}" data-label="{label}"
+          data-pending-label="{pending}">
+      <button class="btn {btn}" type="submit">{label}</button>
+    </form>
+  </div>
+  <div class="meta">{status}{age}{active}<span class="id">{display}</span></div>{mission}{why}{buttons}{permission}{link}{output}
+</div>"""
+
+_AGENT_BUTTON = """
+  <form class="gap" method="post" action="/agents/{path}/{action}"
+        data-api="/api/agents/{path}/{action}" data-pending-label="{pending}">{fields}
+    <button class="btn" type="submit">{label}</button>
+  </form>"""
+
+_MISSION = """<div class="mission">{text}</div>"""
+
+# A page-level problem carried as a row, so it comes and goes with the polls
+# like any other: tmux on the agents socket not answering, say.
+_NOTICE_ROW = """<div class="row notice" data-slug="{slug}" data-state="failed">
+  <div class="name">{title}</div>
+  <div class="why">{text}</div>
+</div>"""
+
+_PARKED_TOGGLE = """<button id="parked" class="btn" type="button" {hidden}
+  onclick="document.body.classList.toggle('show-parked')">Parked ({n})</button>"""
+
 _EMPTY = """<div class="empty">No projects here yet. Clone a repo into
 <code>~/projects</code> on the devbox and it shows up on this page.</div>"""
 
 _BANNER = """<div class="banner">
   <div class="name">This box is signed out of Claude</div>
-  <p>No listener can start until it is signed in again.</p>
+  <p>No agent can start until it is signed in again.</p>
   <form method="post" action="/login/start"><button class="btn" type="submit">Sign in</button></form>
 </div>"""
 
 
 def permission_label(mode: str | None) -> str:
     """What a mode is called on the page. An unrecorded mode reads as the one
-    the CLI would pick for itself, which is what the listener actually gets."""
+    the CLI would pick for itself, which is what the agent actually gets."""
     return _MODE_LABELS.get(mode or "default", mode or "default")
 
 
-def _permission(slug: str, current: str | None, running: bool) -> str:
-    # ".gap" on a running row, ".fix" on a stopped one: the first restarts the
-    # listener and takes seconds, so it goes through the client's pending path
-    # (see ui._JS); the second only writes a line of state and comes straight
-    # back. Both are ordinary forms without JavaScript.
+def project_row(*, slug, name, ident, warning=None, fix_remote=True, run=None,
+                run_tone="", new=True) -> str:
+    return _PROJECT_ROW.format(
+        slug=escape(slug), state="project", name=escape(name), ident=escape(ident),
+        warn=(_WARN if fix_remote else _NOTE).format(text=escape(warning), slug=escape(slug))
+        if warning else "",
+        new=_NEW_AGENT.format(slug=escape(slug)) if new else "",
+        run="" if run is None else _RUN_ROW.format(
+            slug=escape(slug), name=escape(name),
+            state=_RUN_STATE.format(slug=escape(slug), name=escape(name), tone=escape(run_tone),
+                                    label=escape(run)) if run else ""))
+
+
+def notice_row(*, slug, title, text) -> str:
+    return _NOTICE_ROW.format(slug=escape(slug), title=escape(title), text=escape(text))
+
+
+def _agent_button(path, action, label, pending, force=False) -> str:
+    fields = '\n    <input type="hidden" name="force" value="1">' if force else ""
+    return _AGENT_BUTTON.format(path=escape(path), action=action, label=escape(label),
+                                pending=escape(pending), fields=fields)
+
+
+def agent_row(*, key, name, display, state, status, running, parked, scratch, archivable,
+              resumable, broken, mode, age=None, active=None, mission=None, reason=None,
+              url=None, stale=False, output=None) -> str:
+    """One agent. `state` is the rail colour and the client's marker, as on
+    project rows before: connected / starting / ready / failed / stopped."""
+    path = key                       # "<project>/<name>": both segments are slugs
+    if broken:
+        action, label, pending, btn = "repair", "Recreate worktree", "Recreating…", "start"
+    elif running:
+        action, label, pending, btn = "stop", "Stop", "Stopping…", "stop"
+    else:
+        action, label, pending, btn = "start", "Resume" if resumable else "Start", "Starting…", "start"
+    buttons = []
+    if not broken and not scratch:
+        if stale:
+            buttons.append(_agent_button(path, "fresh", "Fresh anyway", "Starting…", force=True))
+        else:
+            buttons.append(_agent_button(path, "fresh", "Fresh conversation", "Starting…"))
+    if not running and not parked and not scratch:
+        buttons.append(_agent_button(path, "park", "Park", "Parking…"))
+    if archivable and not running:
+        buttons.append(_agent_button(path, "archive", "Archive", "Archiving…"))
+    return _AGENT_ROW.format(
+        cls=" parked" if parked else "", key=escape(key), state=escape(state),
+        name=escape(name), path=escape(path), action=action, label=escape(label),
+        pending=escape(pending), btn=btn,
+        status=f'<span class="state">{escape(status)}</span>' if status else "",
+        age=_AGE.format(age=escape(age)) if age else "",
+        active=_AGE.format(age=escape(active)) if active else "",
+        display=escape(display),
+        mission=_MISSION.format(text=escape(mission)) if mission else "",
+        why=_WHY.format(reason=escape(reason)) if reason else "",
+        buttons="".join(buttons),
+        permission="" if scratch else _permission_agent(path, mode, running),
+        link=_LINK.format(url=escape(url)) if url else "",
+        output=_OUTPUT.format(slug=escape(key)) if (running if output is None else output) else "")
+
+
+def _permission_agent(path: str, current: str | None, running: bool) -> str:
     cls = "gap" if running else "fix"
     selected = current or "default"
     chips = "".join(
-        _MODE_CHIP.format(slug=escape(slug), mode=escape(mode), cls=cls,
-                          label=escape(label), on=" on" if mode == selected else "")
+        _MODE_CHIP.format(slug=escape(path), mode=escape(mode), cls=cls, label=escape(label),
+                          on=" on" if mode == selected else "")
         for mode, label in _MODE_LABELS.items())
     return _MODE.format(current=escape(permission_label(current)), chips=chips,
                         note=_MODE_RESTART_NOTE if running else _MODE_NOTE)
 
-
-def row(*, slug, name, state, ident, label, action, reason=None, url=None,
-        status=None, age=None, warning=None, retry=False, fresh=False,
-        parallel=None, mode=None, run=None, run_tone="", instance=False,
-        remove=False, new_instance=False, fix_remote=True,
-        origin_slug=None, permission=None) -> str:
-    """One project row. `state` doubles as the rail's colour and as the
-    machine-readable marker the client script and the tests read."""
-    running = action == "stop"
-    return _ROW.format(
-        slug=escape(slug), state=escape(state), name=escape(name),
-        action=escape(action), label=escape(label),
-        pending="Starting…" if action == "start" else "Stopping…",
-        cls="stop" if running else "start",
-        cls_row=" instance" if instance else "",
-        status=f'<span class="state">{escape(status)}</span>' if status else "",
-        age=_AGE.format(age=escape(age)) if age else "",
-        ident=escape(ident),
-        why=_WHY.format(reason=escape(reason)) if reason else "",
-        retry=_RETRY.format(slug=escape(slug)) if retry else "",
-        fresh=_FRESH.format(slug=escape(slug)) if fresh else "",
-        remove=_REMOVE.format(slug=escape(slug)) if remove else "",
-        # On every row, running or not: unlike the spawn mode, this one can be
-        # changed under a live listener — that is the whole point of it, since
-        # nothing else on a phone can.
-        permission=_permission(slug, permission, running),
-        # None: no toggle on this row (a running listener's mode is fixed)
-        parallel="" if parallel is None else _PARALLEL.format(
-            slug=escape(slug), state="on" if parallel else "off",
-            next="0" if parallel else "1",
-            note=_PARALLEL_NOTE if parallel else ""),
-        mode=_AGE.format(age=escape(mode)) if mode else "",
-        new=_NEW_INSTANCE.format(slug=escape(slug)) if new_instance else "",
-        # The Rename button always acts on the project, never the instance:
-        # a worktree has no `origin` of its own to rename, only the parent
-        # does. `origin_slug` defaults to this row's own slug, which is
-        # correct for a project row and irrelevant when there's no button.
-        warn=(_WARN if fix_remote else _NOTE).format(
-            text=escape(warning), slug=escape(origin_slug or slug)) if warning else "",
-        link=_LINK.format(url=escape(url)) if url else "",
-        # Nothing to read on a listener that is not running.
-        output=_OUTPUT.format(slug=escape(slug)) if running else "",
-        # None: running commands is off, so no control at all
-        run="" if run is None else _RUN_ROW.format(
-            slug=escape(slug), name=escape(name),
-            state=_RUN_STATE.format(slug=escape(slug), name=escape(name),
-                                    tone=escape(run_tone), label=escape(run)) if run else ""))
-
-
 def page(*, rows: list[str], count: str, usage: str = "", signed_in: bool,
-         run: bool = False) -> str:
+         run: bool = False, parked: int = 0) -> str:
     return _PAGE.format(css=_CSS, js=(_RUN_JS + _JS) if run else _JS,
                         runbox=_RUNBOX if run else "",
                         count=escape(count), usage=escape(usage),
+                        parked=_PARKED_TOGGLE.format(n=parked, hidden="" if parked else "hidden"),
                         banner="" if signed_in else _BANNER,
                         rows="\n".join(rows) or _EMPTY)
 
@@ -774,7 +766,7 @@ _LOGIN_WAITING = """<div class="card">
 
 _LOGIN_DONE = """<div class="card">
   <p>This box is signed in.</p>
-  <p class="hint">The listeners you had running are coming back.</p>
+  <p class="hint">Start your agents again from the sessions page.</p>
 </div>"""
 
 _LOGIN_ERROR = """<div class="card">

@@ -1,7 +1,7 @@
 [project]
 name = "devbox-launcher"
-version = "0.1.0"
-description = "Web UI to start and stop Claude Code remote-control listeners on a headless dev box"
+version = "0.2.0"
+description = "Web UI and CLI for named, long-lived Claude Code agents on a headless dev box"
 readme = "README.md"
 requires-python = ">=3.12"
 license = "MIT"
@@ -19,6 +19,9 @@ dependencies = ["fastapi", "uvicorn", "python-multipart"]
 [project.optional-dependencies]
 dev = ["pytest", "httpx"]
 
+[project.scripts]
+agentctl = "launcher.agents.cli:main"
+
 [project.urls]
 Homepage = "https://github.com/Nomafin/devbox-launcher"
 Issues = "https://github.com/Nomafin/devbox-launcher/issues"
@@ -30,7 +33,7 @@ requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-packages = ["launcher"]
+packages = ["launcher", "launcher.agents"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

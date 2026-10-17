@@ -1,9 +1,11 @@
-# `CLAUDE.md` block for boxes that enable Run command
+# `CLAUDE.md` block for the box
 
 The launcher cannot tell a request from your phone apart from one a Claude
 session makes on the box itself (see SECURITY.md → *Run command*). The missing
-piece is a rule for the agent. Put this in the box's `~/.claude/CLAUDE.md`
-(every project's sessions read it), replacing the host name:
+piece is a rule for the agent; the block also tells agents about their briefs.
+Put this in the box's `~/.claude/CLAUDE.md` (every project's sessions read
+it), replacing the host name. Leave out the first section if you have not
+enabled Run command.
 
 ```markdown
 ## Commands the user has to run themselves
@@ -22,10 +24,14 @@ Never call the launcher's /run endpoints yourself (curl, a browser, or
 anything else). They exist so the user runs what you may not; calling them
 would sidestep the permission check.
 
-When work needs its own branch and checkout, the user can tap **New
-instance** on the project's row in the launcher; it appears as
-`devbox-<slug>--<name>` in the Claude app and works in
-`.claude/worktrees/<name>`.
+Sessions here are named agents (`<project>·<name>`, e.g. `notes·drafts`).
+Each has a brief at `$AGENT_BRIEF`: keep it current as you finish meaningful
+work, and rewrite it fully when the user runs /handoff. A new conversation for
+an agent is started with Fresh (the launcher's **Fresh conversation**, or
+`agentctl start <project>/<name> --fresh`), not /clear. When work needs its
+own branch and checkout, the user creates a new agent (**New agent** on the
+project's row in the launcher, or `agentctl new <project>/<name>`); it works
+in `.claude/worktrees/<name>` on branch `agent/<name>`.
 ```
 
 If you manage the box with a configuration tool, keep this in a marked block

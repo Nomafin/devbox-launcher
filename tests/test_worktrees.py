@@ -269,3 +269,15 @@ def test_blockers_still_reports_an_untracked_file_with_an_unborn_head(unborn_rep
     (worktrees.path(unborn_repo, "probe") / "notes.txt").write_text("x\n")
     message = worktrees.blockers(worktrees.path(unborn_repo, "probe"))
     assert message is not None and "uncommitted" in message.lower()
+
+
+def test_create_on_named_branch(tmp_path):
+    import subprocess
+    repo = tmp_path / "r"
+    subprocess.run(["git", "init", "-q", "-b", "main", str(repo)], check=True)
+    subprocess.run(["git", "-C", str(repo), "-c", "user.email=t@t", "-c", "user.name=t",
+                    "commit", "-q", "--allow-empty", "-m", "init"], check=True)
+    assert worktrees.create(repo, "drafts", branch="agent/drafts") is None
+    head = subprocess.run(["git", "-C", str(worktrees.path(repo, "drafts")), "rev-parse",
+                           "--abbrev-ref", "HEAD"], capture_output=True, text=True).stdout.strip()
+    assert head == "agent/drafts"

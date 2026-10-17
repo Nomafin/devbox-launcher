@@ -16,7 +16,6 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from .state import state_path
 from .tmuxctl import Runner, StartError, default_run, tmux_args
 
 # Deliberately not `devbox-<slug>`: that is the project's listener.
@@ -44,8 +43,15 @@ def session_name(slug: str) -> str:
     return f"{PREFIX}{slug}"
 
 
+def state_dir() -> Path:
+    """Where the launcher keeps what it remembers across restarts."""
+    base = os.environ.get("XDG_STATE_HOME")
+    root = Path(base) if base else Path.home() / ".local" / "state"
+    return root / "devbox-launcher"
+
+
 def record_path(slug: str, directory=None) -> Path:
-    base = Path(directory) if directory is not None else state_path().parent
+    base = Path(directory) if directory is not None else state_dir()
     return base / f"run-{slug}.json"
 
 

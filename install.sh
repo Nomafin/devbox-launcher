@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Install (or update) the devbox launcher as a systemd --user service.
+# Install (or update) the devbox launcher as a systemd --user service, along
+# with `agentctl` and the agents' reaper timer and restore-at-boot unit.
 #
 # Run this as the user whose Claude sessions the launcher will manage — it
 # installs into that user's home and runs under their systemd instance. Only
@@ -19,6 +20,9 @@ PORT="${LAUNCHER_PORT:-8765}"
 RUN_USER="${LAUNCHER_RUN_USER:-}"
 UNIT_DIR="$HOME/.config/systemd/user"
 UNIT="devbox-launcher.service"
+BIN_DIR="$HOME/.local/bin"
+AGENTS_CONF_DIR="$HOME/.config/agents"
+COMMANDS_DIR="$HOME/.claude/commands"
 
 die() { printf '\033[31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 note() { printf '\033[36m==>\033[0m %s\n' "$*"; }
@@ -68,15 +72,48 @@ note "installing the launcher package"
 note "verifying the package imports"
 "$VENV/bin/python" -c 'import launcher.app' || die "the installed package does not import cleanly"
 
-note "writing $UNIT_DIR/$UNIT"
+# --- agents -----------------------------------------------------------------
+# agentctl is the command line to the same agent registry the web UI uses; the
+# reaper and restore units run it too (from the venv, not via PATH).
+note "linking agentctl into $BIN_DIR"
+mkdir -p "$BIN_DIR"
+ln -sfn "$VENV/bin/agentctl" "$BIN_DIR/agentctl"
+case ":$PATH:" in
+    *":$BIN_DIR:"*) ;;
+    *) warn "$BIN_DIR is not on your PATH; add it (see the README for non-interactive ssh)" ;;
+esac
+
+note "installing the agents tmux config ($AGENTS_CONF_DIR/tmux.conf)"
+mkdir -p "$AGENTS_CONF_DIR"
+install -m 0644 "$REPO_DIR/agents/tmux.conf" "$AGENTS_CONF_DIR/tmux.conf"
+
+# /handoff makes a running agent rewrite its own brief before a fresh start.
+note "installing the /handoff command ($COMMANDS_DIR/handoff.md)"
+mkdir -p "$COMMANDS_DIR"
+if [ -f "$COMMANDS_DIR/handoff.md" ] && ! cmp -s "$REPO_DIR/agents/handoff.md" "$COMMANDS_DIR/handoff.md"; then
+    cp "$COMMANDS_DIR/handoff.md" "$COMMANDS_DIR/handoff.md.bak"
+    warn "replaced an existing $COMMANDS_DIR/handoff.md (previous copy kept as handoff.md.bak)"
+fi
+install -m 0644 "$REPO_DIR/agents/handoff.md" "$COMMANDS_DIR/handoff.md"
+
+# --- units -------------------------------------------------------------------
+render() {
+    sed -e "s|@VENV@|$VENV|g" \
+        -e "s|@BASE_DIR@|$BASE_DIR|g" \
+        -e "s|@HOST@|$HOST|g" \
+        -e "s|@PORT@|$PORT|g" \
+        -e "s|@RUN_USER@|$RUN_USER|g" \
+        -e "s|@CLAUDE_BIN_DIR@|$CLAUDE_BIN_DIR|g" \
+        "$1" > "$2"
+}
+
 mkdir -p "$UNIT_DIR"
-sed -e "s|@VENV@|$VENV|g" \
-    -e "s|@BASE_DIR@|$BASE_DIR|g" \
-    -e "s|@HOST@|$HOST|g" \
-    -e "s|@PORT@|$PORT|g" \
-    -e "s|@RUN_USER@|$RUN_USER|g" \
-    -e "s|@CLAUDE_BIN_DIR@|$CLAUDE_BIN_DIR|g" \
-    "$REPO_DIR/devbox-launcher.service.in" > "$UNIT_DIR/$UNIT"
+note "writing $UNIT_DIR/$UNIT"
+render "$REPO_DIR/devbox-launcher.service.in" "$UNIT_DIR/$UNIT"
+note "writing the agents reaper and restore units"
+render "$REPO_DIR/agents-reap.service.in" "$UNIT_DIR/agents-reap.service"
+install -m 0644 "$REPO_DIR/agents-reap.timer" "$UNIT_DIR/agents-reap.timer"
+render "$REPO_DIR/agents-restore.service.in" "$UNIT_DIR/agents-restore.service"
 
 # Without lingering, the service dies at logout and never comes back after a
 # reboot — which is exactly when you most want it (you are away from the box).
@@ -90,6 +127,13 @@ note "starting the service"
 systemctl --user daemon-reload
 systemctl --user enable --now "$UNIT"
 systemctl --user restart "$UNIT"
+
+# The reaper parks idle agents (3 days) and deletes idle scratch sessions
+# (12 hours). Restore only runs at boot: starting it now would start every
+# agent marked active, which an install has no business doing.
+note "enabling the agents reaper timer and restore-at-boot unit"
+systemctl --user enable --now agents-reap.timer
+systemctl --user enable agents-restore.service
 
 # The service reports "active (running)" in between crash-loop restarts, so
 # only an actual HTTP answer proves the install worked.

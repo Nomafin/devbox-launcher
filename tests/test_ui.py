@@ -104,3 +104,19 @@ def test_node_parses_the_client_script():
     result = subprocess.run(["node", "--check", "-"], input=ui._JS,
                             capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
+
+
+def test_agent_row_states():
+    from launcher import ui
+    html = ui.agent_row(key="notes/drafts", name="drafts", display="notes·drafts", state="stopped",
+                        status="", running=False, parked=True, scratch=False, archivable=True,
+                        resumable=True, broken=False, mode=None, mission="Alumni")
+    assert 'class="row agent parked"' in html and "Resume" in html and "Archive" in html
+    assert 'action="/agents/notes/drafts/fresh"' in html and "Alumni" in html
+
+
+def test_unrecorded_mode_reads_as_the_settings_default():
+    from launcher import ui
+    assert ui.permission_label(None) == "Default (settings)"
+    assert ui.permission_label("default") == "Default (settings)"
+    assert "Ask" not in ui._permission_agent("notes/main", None, False)

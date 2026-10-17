@@ -1,0 +1,25 @@
+[Unit]
+Description=Start the agents that were running before a reboot
+# Inert in the user manager (it has no network-online.target of its own); the
+# ExecStartPre below is what actually waits for the network.
+After=network-online.target
+
+[Service]
+Type=oneshot
+# `agentctl restore` starts the agents' tmux server, which lands in this
+# unit's cgroup. With the default KillMode=control-group, systemd kills the
+# cgroup when ExecStart exits, and every restored agent with it. Stay "active
+# (exited)" and only ever signal the main process.
+RemainAfterExit=yes
+KillMode=process
+# Claude has to reach claude.ai to connect: wait up to 60 s for DNS, then try
+# regardless (a failed agent says why on its row).
+ExecStartPre=/bin/sh -c 'for i in $(seq 60); do getent hosts claude.ai >/dev/null && exit 0; sleep 1; done; exit 0'
+ExecStart=@VENV@/bin/agentctl restore
+Environment=LAUNCHER_BASE_DIR=@BASE_DIR@
+Environment=PATH=@CLAUDE_BIN_DIR@:/usr/local/bin:/usr/bin:/bin
+# A dozen agents settle a few seconds each, after up to a minute of network.
+TimeoutStartSec=11min
+
+[Install]
+WantedBy=default.target

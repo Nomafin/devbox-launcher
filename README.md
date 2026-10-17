@@ -1,28 +1,30 @@
 # devbox-launcher
 
-A small web UI for starting and stopping [Claude Code](https://claude.com/claude-code)
-`remote-control` listeners on a headless development box — one per git project —
-so you can open a session from your phone without SSHing in.
+A small web UI and command line for running **named, long-lived
+[Claude Code](https://claude.com/claude-code) agents** on a headless
+development box — so you can start, resume and retire them from your phone
+without SSHing in.
 
-The launcher only starts, stops and monitors listeners. You drive the actual
-session in the Claude mobile app or at claude.ai/code.
+Each agent is an interactive `claude --remote-control` session in tmux. You
+drive it in the Claude mobile app or at claude.ai/code, or attach to it from a
+terminal; the launcher starts, stops, parks and monitors it.
 
 <p align="center">
   <img src="docs/images/launcher-sessions.png" width="380"
-       alt="The launcher on a phone: six projects and one instance. Acme is live with three parallel sessions in Auto permission mode and has an indented instance row 'spike' with its own listener; blog is live with a finished Run command; demo has no session yet; webapp failed with the CLI's error and a Retry button; two stopped projects show Start, Parallel sessions and New instance, and one carries a GitHub origin warning.">
+       alt="The launcher on a phone: five projects with their agents. Acme has a live main agent and a live agent 'billing' in Accept edits mode with its mission underneath; blog's main has been live for 8 days and its last Run command finished with exit 0; demo has a stopped main and a scratch session starting; notes has a stopped main to resume; webapp's main failed to start with the CLI's login error and its agent 'search' crashed with exit 1.">
 </p>
 
-Every row is a project. The coloured rail is a health signal, not just
-"process alive" — green means a session is actually live and reachable from the
-app, amber means the listener is registered but idle, red means it failed or
-wedged and carries the CLI's own error underneath it.
+Every project row lists its agents. The coloured rail is a health signal, not
+just "process alive" — green means the agent is live and reachable from the
+app, amber that it is starting or not connected, red that it failed or crashed,
+with Claude's own error underneath.
 
-When the box's Claude login expires every listener fails the same way, so the
+When the box's Claude login expires every agent fails the same way, so the
 launcher lets you fix that from the phone too, without a shell:
 
 <p align="center">
   <img src="docs/images/launcher-signed-out.png" width="380"
-       alt="A red banner reading 'This box is signed out of Claude — no listener can start until it is signed in again', with a Sign in button above the project list.">
+       alt="A red banner reading 'This box is signed out of Claude — No agent can start until it is signed in again', with a Sign in button above the project list.">
 </p>
 
 Claude sometimes needs *you* to run a command — a production deploy, an
@@ -32,12 +34,12 @@ output, any prompt and the exit code right there in the modal:
 
 <p align="center">
   <img src="docs/images/launcher-run.png" width="380"
-       alt="The Run command modal over the blog row: the command 'git pull github main', its directory, the command's output, 'Finished — exit code 0', and Copy output and Done buttons.">
+       alt="The Run command modal over the blog row: the command 'git pull origin main', its directory, the command's output, 'Finished — exit code 0', and Copy output and Done buttons.">
 </p>
 
 <sub>Screenshots are rendered from fabricated data by
-<a href="docs/demo_server.py">docs/demo_server.py</a>, which stubs the tmux, git
-and Claude CLI boundaries and lets the real UI code draw the page.</sub>
+<a href="docs/demo_server.py">docs/demo_server.py</a>, which stubs tmux and the
+Claude CLI and lets the real UI and agent code draw the page.</sub>
 
 > **Read [SECURITY.md](SECURITY.md) before installing.** This service starts AI
 > agent sessions that can read and write your code, and it has **no
@@ -48,7 +50,7 @@ and Claude CLI boundaries and lets the real UI code draw the page.</sub>
 - Linux with **systemd** (user services + lingering). Developed on Ubuntu 24.04
   in an LXC container.
 - **Python 3.12+** with `venv`
-- **tmux** — used as the process supervisor for listeners
+- **tmux** — the process supervisor for agents
 - **git**
 - **Claude Code CLI** on `PATH`, signed in to a claude.ai subscription that
   includes Remote Control
@@ -62,9 +64,18 @@ cd devbox-launcher
 ./install.sh
 ```
 
-Run it as the user whose sessions you want to manage — not as root. It creates a
-venv, installs the package, writes a systemd `--user` unit, enables lingering
-(the one step that needs `sudo`), starts the service and waits for it to answer.
+Run it as the user whose agents you want to manage — not as root. It:
+
+- creates a venv and installs the package;
+- links `agentctl` into `~/.local/bin`;
+- installs the agents' tmux config (`~/.config/agents/tmux.conf`) and the
+  `/handoff` command (`~/.claude/commands/handoff.md`);
+- writes three systemd `--user` units: the web app, `agents-reap.timer`
+  (enabled and started), and `agents-restore.service` (enabled, so it runs at
+  boot — never started by the install, which would start every agent that was
+  last marked running);
+- enables lingering (the one step that needs `sudo`), starts the service and
+  waits for it to answer.
 
 Then publish it to your tailnet:
 
@@ -76,12 +87,22 @@ The UI is now at `https://<host>.<your-tailnet>.ts.net`. This needs tailnet
 HTTPS certificates enabled once, in the Tailscale admin console under DNS.
 
 Re-run `./install.sh` to update after a `git pull`; it force-reinstalls and
-restarts. Running listeners survive the restart (the unit sets
+restarts. Running agents survive the restart (the unit sets
 `KillMode=process`).
+
+**`agentctl` over ssh.** Many distributions put `~/.local/bin` on `PATH` only
+for login shells, so `ssh box agentctl ls` (a non-interactive command) does not
+find it. Either link it somewhere on the system `PATH`,
+
+```bash
+sudo ln -sf ~/.local/share/devbox-launcher/venv/bin/agentctl /usr/local/bin/agentctl
+```
+
+or call it by its full path (`ssh box '~/.local/bin/agentctl ls'`).
 
 ## Configuration
 
-All optional, read from the environment by the systemd unit:
+All optional, read from the environment by the systemd units:
 
 | Variable | Default | Meaning |
 |---|---|---|
@@ -90,6 +111,7 @@ All optional, read from the environment by the systemd unit:
 | `LAUNCHER_PORT` | `8765` | Bind port |
 | `LAUNCHER_VENV` | `~/.local/share/devbox-launcher/venv` | Install location (install-time only) |
 | `LAUNCHER_RUN_USER` | *(empty)* | Tailnet login allowed to use **Run command**; empty hides the feature — see below |
+| `AGENTS_HOME` | `~/.config/agents` | Agent registry and briefs (rarely worth changing) |
 
 ## How projects are discovered
 
@@ -97,64 +119,163 @@ Everything under `LAUNCHER_BASE_DIR` that is either:
 
 - a **git repo** — a directory containing `.git`; or
 - a **group** — a directory containing a `claude-project/` subdirectory
-  alongside several code repos. Claude launches in `claude-project/`, which acts
-  as the config and history anchor, and reaches the sibling repos normally.
+  alongside several code repos. Agents launch in `claude-project/`, which acts
+  as the config and history anchor, and reach the sibling repos normally.
 
 A directory that is both is treated as a repo.
 
-## Using it
+## Agents
 
-Tap **Start** and a listener comes up as `devbox-<slug>`; pick that name in the
-Claude app. The coloured rail on each row is a health signal, not just
-"process alive":
+An **agent** is one long-lived Claude conversation with a name. It shows up
+in the Claude app, on the page and in tmux as `<project>·<name>`, and the
+launcher and `agentctl` are two front ends to the same registry
+(`~/.config/agents/registry.json`) — anything done in one shows in the other.
+
+There are three kinds:
+
+- **main** — every project's default agent. Works in the project checkout
+  itself. Can be stopped and parked, never archived.
+- **named agent** — created with **New agent** on a project row (or
+  `agentctl new <project>/<name>`). Works in its own git worktree,
+  `<launch dir>/.claude/worktrees/<name>`, on branch `agent/<name>`, so several
+  agents can edit the same repo at once.
+- **scratch** — **Quick chat**, a throwaway session for a one-off question.
+  No brief, branch or worktree; deleted when stopped, and by the reaper after
+  12 idle hours.
+
+A row's button is **Start** (**Resume** when it has a conversation to come
+back to), **Stop** when running, or **Recreate worktree** when the worktree has
+been deleted from disk. Start takes a few seconds while it waits for Claude to
+say `/remote-control is active`; then tap **Open in the Claude app**, or pick
+`<project>·<name>` in the app.
 
 | Rail | Means |
 |---|---|
-| green — *Live* | a session is live and reachable from the app |
-| amber — *No session yet* / *Starting…* | registered, but no session yet |
-| red — *Start failed* | session creation failed; the CLI's error is shown |
-| red — *Stuck* | up but silent for 30 s — wedged rather than slow |
+| green — *Live* | connected; reachable from the app |
+| amber — *Starting…* / *Not connected* | running, Remote Control not up (yet) |
+| red — *Start failed* | Claude exited on start; its error is shown |
+| red — *Crashed (exit N)* | Claude died after it had started; *Show output* has its last lines |
+| red — *Worktree missing* | the agent's worktree is gone; **Recreate worktree** rebuilds it from the branch |
+| none | stopped |
 
-Start takes about 7 seconds because it waits for the listener to settle, so the
-row tells the truth immediately rather than flipping states under you.
+A live row shows how long it has been up; a stopped one when it was last
+active. **Show output** expands the last 20 lines of the pane.
 
-Other controls: **Retry** (stop, clear the resume pointer, start again),
-**Start fresh** (discard the recorded conversation), **Parallel sessions**
-(`--spawn worktree`, so each session gets its own git worktree and several can
-edit at once), **Show output** (last 20 lines of the pane, fetched on demand),
-and the three below.
+### Briefs, `/handoff` and Fresh
 
-**Permission mode.** Every row has a `▸ Permission mode` disclosure with four
-chips: **Ask**, **Accept edits**, **Auto**, **Plan**. This is
-`claude remote-control --permission-mode`, which the CLI fixes at listener
-startup and the Claude app cannot change afterwards — so before this, a session
-stuck asking about every edit could only be fixed from a terminal. On a
+Every agent except scratch has a **brief** — a short Markdown file at
+`~/.config/agents/briefs/<project>/<name>.md` with four sections: Mission,
+State, Next steps, Gotchas. The agent's process has its path in
+`AGENT_BRIEF`, and is told to keep it current. The Mission line is shown on
+the row.
+
+**Fresh conversation** starts a new conversation for the agent, seeded from its
+brief. Before going fresh, run **`/handoff`** in the agent: it rewrites the
+brief so the new conversation knows what the old one did. If the brief has not
+been updated since the agent's last activity, Fresh refuses (*the brief is
+stale*) and the button becomes **Fresh anyway** for one tap.
+
+Always start over with **Fresh**, never **`/clear`** inside the agent. After
+`/clear` the agent's recorded conversation is still the old one, so the next
+Resume (or a reboot) brings the old conversation back, and nothing seeds the
+new one from the brief.
+
+### Parking and archiving
+
+- **Park** stops an idle agent and hides it behind the page's **Parked (N)**
+  button; Start wakes it with its conversation. The reaper
+  (`agents-reap.timer`, every 30 minutes) parks agents idle for three days.
+  Idle means no transcript writes, no typing and no output, and a session
+  with a terminal attached is never touched.
+- **Archive** (named agents, when stopped) removes the worktree and files the
+  brief away. It **refuses**, and says why, when the worktree has uncommitted
+  changes, commits on no remote, or a gitignored file at its top level (a
+  `.env`, a scratch note — `git status` is silent about those but removing the
+  worktree deletes them). There is no force button on purpose: this is driven
+  from a phone. Commit and push, then archive. The branch is left behind.
+
+### Reboots and crashes
+
+tmux does not survive a reboot. `agents-restore.service` runs at boot and
+resumes every agent that was running when the box went down; stopped and
+parked agents stay down. An agent closed from inside with `/exit` counts as
+stopped. One that **crashed** (non-zero exit) stays red with its output until
+you tap Resume, and a reboot resumes it too.
+
+### Permission mode
+
+Every agent row has a `▸ Permission mode` disclosure with four chips:
+**Default (settings)**, **Accept edits**, **Auto**, **Plan** — that is
+`claude --permission-mode`, which is fixed when the process starts. On a
 stopped row it sets what the next Start uses; on a running row it restarts the
-listener (a few seconds) and resumes the same conversation. **Ask** passes no
-flag, so the CLI's own default (and any `defaultMode` in
-`~/.claude/settings.json`) applies. `bypassPermissions` and `dontAsk` are
-deliberately not offered; see [docs/how-it-works.md](docs/how-it-works.md).
+agent (a few seconds) and resumes the same conversation. **Default (settings)**
+passes no flag, so `defaultMode` in `~/.claude/settings.json`, or else the
+CLI's own default, applies. `bypassPermissions` and `dontAsk` are deliberately
+not offered; see [docs/how-it-works.md](docs/how-it-works.md).
 
-### Instances: a second copy of a project
+Agents cost roughly 165 MB each while running; stopped and parked agents cost
+nothing.
 
-**New instance** on a project row creates a git worktree at
-`<launch dir>/.claude/worktrees/<name>` on branch `<name>` (reused if it
-exists, otherwise cut from the project's current checkout) and starts a
-listener for it. It shows up in the Claude app as `devbox-<slug>--<name>` and
-on the page as an indented row under its project with the same controls.
+## agentctl
 
-**Remove instance** stops the listener and deletes the worktree. It refuses,
-and says why, when the worktree has uncommitted changes, commits on no remote,
-or a gitignored *file* at its top level (a `.env`, a scratch note — `git
-status` is silent about those but `git worktree remove` deletes them). There is
-no force button on purpose: this is driven from a phone. Commit and push, then
-remove. The branch is left behind either way.
+The same operations from a shell on the box:
 
-Instances survive a reboot like any other listener. Worktrees the Claude app
-makes for its own parallel sessions are **not** instances and never appear as
-rows.
+```bash
+agentctl ls [--project P] [--dir D] [--all]   # agents and their state (--all: archived too)
+agentctl new <project>/<name> [--mode M]      # worktree, branch agent/<name>, brief
+agentctl start <target> [--fresh [--force]] [--create] [--repair] [-- <claude args>]
+agentctl stop|park|archive <target>
+agentctl mode <target> --set default|acceptEdits|auto|plan
+agentctl scratch [--dir D | --project P]      # a Quick chat
+agentctl brief-status <target>                # is the brief stale?
+agentctl resolve <target>                     # which agent a target means
+agentctl reap | restore                       # what the timer and the boot unit run
+agentctl import [--dry-run]                   # one-time migration from instances, below
+```
 
-### Run a command (from the phone)
+A target is `<project>/<name>`, or `--dir <path>` with just a name (default
+`main`); any directory inside the project works, and typing the project's own
+name means `main`. `--json` prints one JSON object. To work in an agent from a
+terminal, attach to its tmux session:
+
+```bash
+agentctl start notes/drafts
+tmux -u -L agents attach -t '=notes·drafts'
+```
+
+`agentctl` exits non-zero with a reason on stderr, and the exit code says what
+kind, so scripts can act on it:
+
+| Code | Meaning |
+|---|---|
+| 2 | invalid arguments or name |
+| 3 | unknown project or agent |
+| 4 | stale brief (Fresh without `--force`) |
+| 5 | start failed |
+| 6 | refused (e.g. archive with unsaved work) |
+| 7 | agent already exists |
+| 8 | worktree missing (use `--repair`) |
+
+**Terminals.** Because `agentctl` speaks in exit codes and `--json`, a small
+wrapper on your laptop can turn "the project of this directory" into an agent
+over SSH: map the local directory to the box's, run
+`ssh box agentctl resolve --json --dir <dir> <name>` (exit 3 means "would
+create" — ask first, then `start --create`), and then
+`ssh -t box tmux -u -L agents attach -t '=<project>·<name>'` (or mosh). This
+repo does not ship such a wrapper; the reaper never parks a session with a
+terminal attached.
+
+### Migrating from listeners and instances
+
+Earlier versions ran `claude remote-control` listeners and *instances*.
+`agentctl import --dry-run` shows, and `agentctl import` registers, each
+recorded instance whose worktree still exists as a named agent (stopped, with
+an empty brief). Nothing old is stopped: in each old session run
+`/handoff <brief path>` so the brief carries what it knew, then stop it
+(`tmux -L devbox-launcher kill-session -t '=devbox-<slug>--<name>'`) and start
+the agent with Fresh.
+
+## Run a command (from the phone)
 
 Claude sometimes needs **you** to run a command: one its permission check
 refuses (it changes production) or one that waits for input (a login). Over
@@ -178,31 +299,22 @@ that Tailscale Serve adds to every request it proxies, e.g.
 POSTs must be same-origin. Read the *Run command* section of
 [SECURITY.md](SECURITY.md) before enabling it — in particular, tell your Claude
 sessions to hand you commands rather than call the endpoint themselves; a
-ready-made `CLAUDE.md` block is in [docs/claude-md-snippet.md](docs/claude-md-snippet.md).
-
-Listeners cost roughly 165 MB each and are started on demand. tmux sessions do
-not survive a reboot, but the launcher records intent in
-`~/.local/state/devbox-launcher/desired.json` and replays it at startup.
-
-**The `origin` gotcha.** If a repo has an `origin` remote pointing at GitHub,
-session creation can fail a repo-access check. The launcher detects this and
-offers a one-tap **Rename origin → github** button. See
-[docs/troubleshooting.md](docs/troubleshooting.md) for the proper fix
-(granting the Claude GitHub App access to the repo).
+ready-made `CLAUDE.md` block (which also tells agents about their briefs) is in
+[docs/claude-md-snippet.md](docs/claude-md-snippet.md).
 
 ## Documentation
 
 - [SECURITY.md](SECURITY.md) — threat model; read it first
 - [docs/how-it-works.md](docs/how-it-works.md) — architecture and design notes
 - [docs/troubleshooting.md](docs/troubleshooting.md) — failure modes seen in practice
-- [docs/claude-md-snippet.md](docs/claude-md-snippet.md) — tell Claude sessions about Run command and instances
+- [docs/claude-md-snippet.md](docs/claude-md-snippet.md) — tell Claude sessions about Run command and briefs
 
 ## Known limitations
 
 - **It parses terminal output.** Health is scraped from `tmux capture-pane`,
-  including the literal `Capacity: N/32` line that `claude remote-control`
-  prints. This is coupled to Claude Code's TUI and **will break** when that
-  output changes. There is no stable API for this; the tests pin the strings
+  including the literal `/remote-control is active` line Claude Code prints.
+  This is coupled to Claude Code's TUI and **will break** when that output
+  changes. There is no stable API for this; the tests pin the strings
   currently relied on.
 - **It has been run in exactly one environment** — an Ubuntu 24.04 LXC on
   Proxmox. The install script should be portable to any systemd Linux, but
@@ -217,12 +329,13 @@ offers a one-tap **Rename origin → github** button. See
 
 ```bash
 python3 -m venv .venv
-.venv/bin/pip install -e . pytest httpx
+.venv/bin/pip install -e '.[dev]'
 .venv/bin/python -m pytest
 ```
 
-409 tests, no network, tmux or git required — the tmux and CLI boundaries are driven
-through injected runners.
+About 300 tests, no network or tmux required — the tmux and CLI boundaries are
+driven through injected runners (the agent tests make throwaway git repos, so
+`git` must be installed).
 
 To regenerate the README screenshots, serve the UI against fabricated data and
 capture it at a phone viewport (414 px wide):

@@ -1,5 +1,5 @@
 [Unit]
-Description=Devbox session launcher (web UI)
+Description=Devbox agent launcher (web UI)
 After=network-online.target
 # Give up after 5 failures in 5 min instead of restarting forever. A bad deploy
 # once looped ~700 times over an hour, which is silent: the unit reads
@@ -18,9 +18,9 @@ Environment=LAUNCHER_RUN_USER=@RUN_USER@
 Environment=PATH=@CLAUDE_BIN_DIR@:/usr/local/bin:/usr/bin:/bin
 Restart=on-failure
 RestartSec=5
-# The listeners' tmux server is a child of this unit, so the default
-# KillMode=control-group takes every running session down on restart — a
-# redeploy used to kill all of them. Only signal the web app itself.
+# An agents tmux server started from the UI is a child of this unit, so the
+# default KillMode=control-group would take every running agent down on
+# restart — a redeploy used to kill all of them. Only signal the web app itself.
 KillMode=process
 
 [Install]

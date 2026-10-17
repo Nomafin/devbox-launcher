@@ -8,20 +8,36 @@ Its only access control is the network it is reachable on.
 
 Anyone who can open the UI can:
 
-- **start a Claude Code session in any of your projects**, with your Claude
-  account and your Unix user's permissions — that is read and write access to
-  every repo under `LAUNCHER_BASE_DIR`, and whatever else that user can do;
-- **read the last 20 lines of any listener's output** via *Show output*, which
-  may contain source code, file paths or error text;
-- **rename a repo's `origin` remote to `github`** (the single write the launcher
-  ever performs inside a repo);
+- **start, stop, park and resume any agent in any of your projects**, with
+  your Claude account and your Unix user's permissions — that is read and
+  write access to every repo under `LAUNCHER_BASE_DIR`, and whatever else that
+  user can do;
+- **create new agents** (*New agent*), each of which is a git worktree and a
+  branch `agent/<name>` cut in your repo, and **start scratch sessions**
+  (*Quick chat*);
+- **start a fresh conversation for any agent** (*Fresh conversation*), seeded
+  from its brief. A stale brief makes the first tap refuse, but *Fresh
+  anyway* is one more tap; the old conversation is not deleted, just no longer
+  the one the agent resumes;
+- **archive any named agent**, which removes its worktree. Archive refuses
+  when the worktree has uncommitted changes, commits on no remote, or a
+  gitignored file at its top level, and there is no force button — so it
+  cannot destroy unsaved work, but it can retire an agent you meant to keep
+  (the branch and the brief, under `~/.config/agents/archive/`, survive);
+- **read the last 20 lines of any agent's output** via *Show output*, which
+  may contain source code, file paths or error text — and, through *Open in
+  the Claude app*, the link to a live agent's session (opening it still needs
+  your Claude account);
+- **rename a repo's `origin` remote to `github`** (a legacy button, shown only
+  for a GitHub `origin`; besides agent worktrees and branches, the only write
+  the launcher performs inside a repo);
 - **complete a Claude sign-in** if the box is signed out — which binds the box
   to *their* Claude account.
-- **create and remove git worktrees** under any project (*New instance* /
-  *Remove instance*); removal refuses when it would lose work, but creation
-  is unconditional;
-- **restart any listener in a different permission mode**, including `auto`,
-  which lets the agent act without asking;
+- **restart any agent in a different permission mode** — *Default
+  (settings)*, *Accept edits*, *Auto* or *Plan*. `auto` lets the agent act
+  without asking. `bypassPermissions` and `dontAsk` are not offered, and the
+  server refuses any mode outside that list, so the page cannot be used to
+  switch the permission check off entirely;
 - **run arbitrary shell commands as your user**, *if* you have enabled **Run
   command** by setting `LAUNCHER_RUN_USER` — see below.
 
@@ -64,9 +80,19 @@ deployment and would be indefensible outside it:
   trust the code in a directory; the launcher answers yes on your behalf,
   because there is no way to answer an interactive prompt from a phone. Only put
   directories you trust under `LAUNCHER_BASE_DIR`.
-- **It runs agents unattended.** A listener sitting at *No session yet* can be
-  picked up from the Claude app at any time, days later. Stop the ones you are
-  not using.
+- **It runs agents unattended.** A running agent can be picked up from the
+  Claude app at any time, days later. The reaper parks agents idle for three
+  days; stop the ones you are not using sooner.
+- **It restarts agents at boot.** `agents-restore.service` resumes every agent
+  that was running when the box went down, without anyone at the keyboard.
+
+## agentctl
+
+`agentctl` has no access control of its own: it is a command for the Unix
+user who owns the agents, and anything running as that user (including a
+Claude session) can create, start, stop or archive agents with it, the same
+as with the web UI. It writes `~/.config/agents/`, which should stay readable
+only by that user.
 
 ## Run command
 

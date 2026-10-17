@@ -2,91 +2,182 @@
 """Serve the launcher UI against fabricated data, for documentation screenshots.
 
 The page this serves is rendered by the real `launcher.ui` and `launcher.app`
-code — only the boundaries that would touch tmux, git, the Claude CLI and
-/proc are stubbed. That keeps the screenshots in README.md honest about what
-the UI looks like without requiring a live box, a Claude login, or exposing
-whatever projects happen to be on the machine taking the picture.
+code, and the agents on it are made by the real `launcher.agents.service`:
+only tmux, the Claude CLI's login check, Run command and /proc are stubbed.
+The projects are throwaway git repos in a temporary HOME, so the screenshots
+in README.md stay honest about what the UI looks like without a live box, a
+Claude login, or exposing whatever projects are on the machine taking them.
 
     python docs/demo_server.py [--port 8799] [--signed-out]
 
 Then screenshot http://127.0.0.1:8799/ at a phone viewport.
 """
 import argparse
+import os
+import shlex
+import subprocess
+import tempfile
+import time
 from pathlib import Path
 
-import uvicorn
+# Path.home() reads $HOME, and the page shows paths relative to it, so the
+# fabricated world has to be the home directory before anything asks.
+WORLD = Path(tempfile.mkdtemp(prefix="devbox-launcher-demo-"))
+os.environ["HOME"] = str(WORLD)
 
-from launcher import discovery
-from launcher.app import create_app
-from launcher.discovery import Project
-from launcher.runctl import RunStatus
-from launcher.tmuxctl import CONNECTED, FAILED, READY, STOPPED, Status
+import uvicorn  # noqa: E402
 
-BASE = Path.home() / "projects"
+from launcher.agents import briefs, registry, runtime, service  # noqa: E402
+from launcher.agents.model import AgentError  # noqa: E402
+from launcher.app import create_app  # noqa: E402
+from launcher.runctl import RunStatus  # noqa: E402
 
-# One project per state worth showing, in the order the real page sorts them:
-# running first, alphabetical within each group.
-PROJECTS = [
-    Project(slug="acme", name="Acme", path=BASE / "Acme",
-            launch_path=BASE / "Acme" / "claude-project"),
-    Project(slug="blog", name="blog", path=BASE / "blog"),
-    Project(slug="demo", name="demo", path=BASE / "demo"),
-    Project(slug="webapp", name="webapp", path=BASE / "webapp"),
-    Project(slug="notes", name="notes", path=BASE / "notes"),
-    Project(slug="sandbox", name="sandbox", path=BASE / "sandbox"),
-]
+BASE = WORLD / "projects"
+CLOCK = {"t": time.time() - 10 * 86400}
 
-STATUSES = {
-    # A group project running several sessions in worktree mode.
-    "acme": Status(running=True, state=CONNECTED, age=10_800, sessions=3,
-                   url="https://claude.ai/code?environment=env_01Rb8TnKqW3xMzJ5vHd7Ls2Y"),
-    # An instance of acme: its own worktree and branch, one live session.
-    "acme--spike": Status(running=True, state=CONNECTED, age=1_500, sessions=1,
-                          url="https://claude.ai/code?environment=env_01Tz6KpLmQr8WvXn3Hd4Jc9F"),
-    # A listener you left up over a week ago — the age is the point.
-    "blog": Status(running=True, state=CONNECTED, age=777_600, sessions=1,
-                   url="https://claude.ai/code?environment=env_01Qw4NmPvXs2LtRk9Bd6Hy3C"),
-    # Registered and waiting for the app: a resting state, not a fault.
-    "demo": Status(running=True, state=READY, age=7_200),
-    # The failure everyone hits first, carrying the CLI's own words.
-    "webapp": Status(running=True, state=FAILED, age=45,
-                     reason="Error: You must be logged in to use Remote Control."),
-    "notes": Status(running=False, state=STOPPED),
-    "sandbox": Status(running=False, state=STOPPED),
-}
 
-PANE_TAIL = [
-    "·✔︎· Connected · Acme · main",
-    "    Capacity: 3/32 · New sessions will be created in a git worktree",
-    "    devbox-acme",
-    "Continue coding in the Claude mobile app or https://claude.ai/code",
-]
+def connected_pane(name: str, sid: str) -> str:
+    return (f"╭─ Claude Code ─ {name}\n"
+            f"{runtime.CONNECTED_SAMPLE} https://claude.ai/code/{sid}\n"
+            "> \n")
 
 
 class FakeTmux:
-    def snapshot(self, slugs):
-        return {slug: STATUSES[slug] for slug in slugs}
+    """The agents socket as a dict, fed the same argv `runtime` builds."""
 
-    def pane_tail(self, slug, lines=20):
-        return list(PANE_TAIL)
+    def __init__(self):
+        self.sessions = {}
+        self.next_pane = None       # pane text for the next session to start
+        self.next_dead = None       # exit status for the next session to start
 
-    def is_running(self, slug):
-        return STATUSES[slug].running
+    @staticmethod
+    def _ok(cmd, out=""):
+        return subprocess.CompletedProcess(cmd, 0, stdout=out, stderr="")
+
+    @staticmethod
+    def _name(target):
+        return target.lstrip("=").rstrip(":")
+
+    def __call__(self, cmd, timeout=None):
+        args = cmd[6:]                          # after tmux -u -L agents -f <conf>
+        if "new-session" in args:
+            rest = args[args.index("new-session") + 1:]
+            name = rest[rest.index("-s") + 1]
+            sid = shlex.split(rest[-1])[-1] if rest[-1] else "session"
+            for flag in ("--resume", "--session-id"):
+                parts = shlex.split(rest[-1])
+                if flag in parts:
+                    sid = parts[parts.index(flag) + 1]
+            dead = self.next_dead is not None
+            self.sessions[name] = dict(
+                created=int(CLOCK["t"]), activity=int(CLOCK["t"]), dead=dead,
+                status=self.next_dead,
+                pane=self.next_pane or connected_pane(name, f"session_{sid[-12:]}"))
+            self.next_pane = self.next_dead = None
+            return self._ok(cmd)
+        verb = args[0]
+        if verb == "list-sessions":
+            if not self.sessions:
+                return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="no server running")
+            return self._ok(cmd, "".join(
+                f"{n}\t{s['created']}\t{s['activity']}\t0\t{s['activity']}\n"
+                for n, s in self.sessions.items()))
+        if verb == "list-panes":
+            return self._ok(cmd, "".join(
+                f"{n}\t{1 if s['dead'] else 0}\t{s['status'] if s['dead'] else ''}\n"
+                for n, s in self.sessions.items()))
+        if verb == "kill-session":
+            self.sessions.pop(self._name(args[args.index("-t") + 1]), None)
+            return self._ok(cmd)
+        if verb == "capture-pane":
+            s = self.sessions.get(self._name(args[args.index("-t") + 1]))
+            return self._ok(cmd, s["pane"] if s else "")
+        return self._ok(cmd)                    # send-keys and the like
 
 
-class FakeState:
-    def parallel(self):
-        return ["acme"]          # drives the "Parallel" badge on the acme row
+def make_repo(path: Path) -> Path:
+    path.mkdir(parents=True, exist_ok=True)
+    git = ["git", "-C", str(path), "-c", "user.email=demo@example.com", "-c", "user.name=demo"]
+    subprocess.run(["git", "init", "-q", "-b", "main", str(path)], check=True)
+    (path / "README.md").write_text(f"# {path.name}\n")
+    subprocess.run([*git, "add", "."], check=True)
+    subprocess.run([*git, "commit", "-qm", "init"], check=True)
+    return path
 
-    def desired(self):
-        return []                # nothing to restore: keeps boot reconcile quiet
 
-    def instances(self):
-        return {"acme": ["spike"]}   # one instance row, indented under acme
+def set_mission(ctx, key: str, mission: str) -> None:
+    agent = registry.load(ctx.root)[key]
+    p = briefs.ensure(ctx.root, agent)
+    p.write_text(f"# {agent.display}\n\n## Mission\n\n{mission}\n\n## State\n\n"
+                 "## Next steps\n\n## Gotchas\n\n")
 
-    def permission_modes(self):
-        # Everything else shows the default chip ("Ask").
-        return {"acme": "auto", "acme--spike": "acceptEdits", "demo": "plan"}
+
+def build_world(tmux: FakeTmux) -> service.Ctx:
+    """One project per state worth showing."""
+    make_repo(BASE / "Acme" / "claude-project")       # a group: its agents run in claude-project/
+    for name in ("blog", "demo", "notes", "webapp"):
+        make_repo(BASE / name)
+    ctx = service.Ctx(root=WORLD / ".config" / "agents", base_dir=BASE, home=WORLD,
+                      run=tmux, now=lambda: CLOCK["t"], sleep=lambda s: None,
+                      trust=lambda p: None)
+
+    def place(slug):
+        return service.place_for(ctx, key=f"{slug}/main")[0]
+
+    def at(seconds_ago):
+        CLOCK["t"] = NOW - seconds_ago
+
+    # notes: a stopped main with a conversation to resume, and a parked agent.
+    at(9 * 86400)
+    service.new(ctx, place("notes"), "drafts")
+    set_mission(ctx, "notes/drafts", "Turn the meeting notes into a weekly digest")
+    service.start(ctx, place("notes"), "drafts")
+    service.start(ctx, place("notes"), "main")
+    at(4 * 86400)
+    service.park(ctx, place("notes"), "drafts")
+    service.stop(ctx, place("notes"), "main")
+
+    # blog: an agent you left up over a week ago; the age is the point.
+    at(8 * 86400)
+    service.start(ctx, place("blog"), "main")
+    set_mission(ctx, "blog/main", "Keep the blog building and the drafts moving")
+
+    # Acme: main, and a named agent in its own worktree in Accept edits mode.
+    at(3 * 3600)
+    service.start(ctx, place("acme"), "main")
+    service.new(ctx, place("acme"), "billing", mode="acceptEdits")
+    set_mission(ctx, "acme/billing", "Move invoicing to the new payments API behind a flag")
+    at(25 * 60)
+    service.start(ctx, place("acme"), "billing")
+
+    # webapp: the failure everyone hits first, carrying the CLI's own words,
+    # and an agent whose Claude crashed after it had been running.
+    at(2 * 3600)
+    service.new(ctx, place("webapp"), "search")
+    set_mission(ctx, "webapp/search", "Replace the search box with full-text search")
+    service.start(ctx, place("webapp"), "search")
+    tmux.sessions["webapp·search"].update(
+        dead=True, status=1,
+        pane=tmux.sessions["webapp·search"]["pane"] + "\nError: ENOSPC: no space left on device\n")
+    at(60)
+    tmux.next_pane = "Error: You must be logged in to use Remote Control.\n"
+    tmux.next_dead = 1
+    try:
+        service.start(ctx, place("webapp"), "main")
+    except AgentError:
+        pass
+
+    # demo: a Quick chat, still coming up.
+    at(10)
+    service.scratch(ctx, place("demo"))
+    for s in tmux.sessions.values():
+        if s["created"] == int(CLOCK["t"]):
+            s["pane"] = "Starting…\n"
+    at(0)
+    return ctx
+
+
+NOW = CLOCK["t"] + 10 * 86400
 
 
 class FakeRunner:
@@ -104,7 +195,7 @@ class FakeRunner:
                 "Already up to date.\n")
 
     def last(self, slug):
-        return {"command": "git pull github main", "cwd": str(BASE / "blog")}
+        return {"command": "git pull origin main", "cwd": str(BASE / "blog")}
 
     def start(self, slug, command, cwd):
         pass
@@ -119,16 +210,12 @@ class FakeRunner:
         pass
 
 
-class FakePointer:
-    def session_id(self, cwd, home=None):
-        # Only `notes` has a recorded conversation, so only it offers
-        # "Start fresh — new conversation".
-        return "session_01Xk7PqMwTn4RsLv9Bd2Hy6C" if cwd.name == "notes" else None
-
-
 class FakeGit:
     def blocks_remote_control(self, repo):
-        return repo.name == "sandbox"     # shows the origin warning + its button
+        return False
+
+    def rename_origin(self, repo):
+        return None
 
 
 class FakeHost:
@@ -153,35 +240,22 @@ class FakeAuth:
         return []
 
 
-class FakeDiscovery:
-    def discover_projects(self, base_dir):
-        return list(PROJECTS)
-
-    # Pure functions of their inputs; the real ones are what the page uses.
-    instance_of = staticmethod(discovery.instance_of)
-
-    def resolve_slug(self, base_dir, slug, instances=None):
-        for project in PROJECTS:
-            if project.slug == slug:
-                return project
-        return None
-
-
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, default=8799)
     parser.add_argument("--signed-out", action="store_true",
-                        help="render the signed-out banner instead of the project list state")
+                        help="render the signed-out banner over the agent list")
     args = parser.parse_args()
 
+    ctx = build_world(FakeTmux())
     app = create_app(
-        base_dir_fn=lambda: BASE,
-        tmx=FakeTmux(), disc=FakeDiscovery(), st=FakeState(), ptr=FakePointer(),
+        base_dir_fn=lambda: BASE, ctx_fn=lambda: ctx,
         git=FakeGit(), host=FakeHost(), auth=FakeAuth(signed_in=not args.signed_out),
         # Run command is shown when a run user is configured, as on a real box
         # that has opted in; the stub never runs anything.
         runner=FakeRunner(), run_user="you@example.com",
     )
+    print(f"demo world in {WORLD}")
     uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="warning")
 
 
