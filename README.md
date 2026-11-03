@@ -256,12 +256,19 @@ kind, so scripts can act on it:
 | 7 | agent already exists |
 | 8 | worktree missing (use `--repair`) |
 
+**Copy terminal command.** A running agent's row has a button that copies
+`ssh -t <user>@<this host> tmux -u -L agents attach -t "'=<project>/<name>'"`,
+with the host the page was opened at (the box's tailnet name), for pasting
+into any terminal. It needs ssh access to the box: Tailscale SSH
+(`tailscale up --ssh`) or your key in `authorized_keys`. Ctrl-b d detaches
+and leaves the agent running.
+
 **Terminals.** Because `agentctl` speaks in exit codes and `--json`, a small
 wrapper on your laptop can turn "the project of this directory" into an agent
 over SSH: map the local directory to the box's, run
 `ssh box agentctl resolve --json --dir <dir> <name>` (exit 3 means "would
 create" — ask first, then `start --create`), and then
-`ssh -t box tmux -u -L agents attach -t '=<project>/<name>'` (or mosh). This
+`ssh -t box tmux -u -L agents attach -t "'=<project>/<name>'"` (or mosh). This
 repo does not ship such a wrapper; the reaper never parks a session with a
 terminal attached.
 
