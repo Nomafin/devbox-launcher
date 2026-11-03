@@ -176,3 +176,11 @@ def test_crash_row_is_red_with_exit_code_and_output(app_world):
     assert "Show output" in html
     lines = app_world.client.get("/api/pane/notes/main").json()["lines"]
     assert lines == ["Error: API went away"]
+
+
+def test_running_agent_offers_its_terminal_command(app_world):
+    assert "data-terminal" not in rows(app_world)["notes/main"]
+    app_world.client.post("/api/agents/notes/main/start")
+    html = rows(app_world)["notes/main"]
+    assert 'data-terminal="tmux -u -L agents attach -t &quot;&#x27;=notes/main&#x27;&quot;"' in html
+    assert 'data-user="' in html and "Copy terminal command" in html
