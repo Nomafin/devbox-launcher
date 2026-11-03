@@ -126,6 +126,10 @@ def test_signals():
     assert runtime.reason("\n\nError: No conversation found\n\n") == "Error: No conversation found"
     assert runtime.reason("") is None
     assert runtime.url("x https://claude.ai/code/session_abc y") == "https://claude.ai/code/session_abc"
+    assert runtime.blocked("  ⎿  Remote Control is disabled by your organization's policy.\n x") == (
+        "Remote Control is disabled by your organization's policy. "
+        "A Claude organization admin must allow it.")
+    assert runtime.blocked(runtime.CONNECTED_SAMPLE) is None
 
 
 def test_transcript_mtime(tmp_path):

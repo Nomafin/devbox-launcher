@@ -124,3 +124,16 @@ def test_unrecorded_mode_reads_as_the_settings_default():
 
 def test_terminal_command_is_built_from_the_page_address():
     assert "'ssh -t ' + button.dataset.user + '@' + location.hostname" in ui._JS
+
+
+def test_run_view_names_an_interrupt():
+    html = ui.run_view(slug="demo", command="sleep 100", cwd="~", output="", running=False,
+                       exit_code=130, signal=2)
+    assert "Finished — exit code 130 (interrupted)" in html
+    html = ui.run_view(slug="demo", command="x", cwd="~", output="", running=False,
+                       exit_code=137, signal=9)
+    assert "exit code 137 (killed by signal 9)" in html
+
+
+def test_run_script_hints_at_a_silent_prompt():
+    assert "Waiting for input? Answer below." in ui._RUN_JS
