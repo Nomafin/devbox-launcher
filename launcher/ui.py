@@ -443,7 +443,10 @@ _JS = r"""
     rows().forEach(function (row) {
       if (!seen[row.dataset.slug] && !row.hasAttribute('data-pending')) row.remove();
     });
+    // Reordering moves rows, and moving an element drops its focus.
+    var active = document.activeElement;
     reorder(projects);
+    if (active !== document.activeElement && list.contains(active)) active.focus();
   }
 
   // The payload is ordered running-first. Patching rows in place keeps their
