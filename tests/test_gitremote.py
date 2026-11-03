@@ -169,3 +169,30 @@ def test_default_run_treats_a_timeout_as_a_failed_command(monkeypatch):
     result = gitremote.default_run(["git", "status"])
     assert result.returncode != 0
     assert result.stderr
+
+
+def test_head_branch_reads_the_checked_out_branch(tmp_path):
+    repo = _repo(tmp_path, "a")
+    (repo / ".git" / "HEAD").write_text("ref: refs/heads/feature/x\n")
+    assert gitremote.head_branch(repo) == "feature/x"
+
+
+def test_head_branch_on_a_detached_head_is_the_short_sha(tmp_path):
+    repo = _repo(tmp_path, "a")
+    (repo / ".git" / "HEAD").write_text("0123456789abcdef0123456789abcdef01234567\n")
+    assert gitremote.head_branch(repo) == "0123456"
+
+
+def test_head_branch_follows_a_worktree_gitdir_file(tmp_path):
+    main = _repo(tmp_path, "main")
+    gitdir = main / ".git" / "worktrees" / "wt"
+    gitdir.mkdir(parents=True)
+    (gitdir / "HEAD").write_text("ref: refs/heads/agent/wt\n")
+    wt = tmp_path / "wt"
+    wt.mkdir()
+    (wt / ".git").write_text(f"gitdir: {gitdir}\n")
+    assert gitremote.head_branch(wt) == "agent/wt"
+
+
+def test_head_branch_outside_a_repo_is_none(tmp_path):
+    assert gitremote.head_branch(tmp_path) is None

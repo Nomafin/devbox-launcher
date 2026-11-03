@@ -137,3 +137,79 @@ def test_run_view_names_an_interrupt():
 
 def test_run_script_hints_at_a_silent_prompt():
     assert "Waiting for input? Answer below." in ui._RUN_JS
+
+
+def _agent(**kw):
+    args = dict(key="notes/main", name="main", display="notes·main", state="connected",
+                status="Live", running=True, parked=False, scratch=False, archivable=False,
+                resumable=True, broken=False, mode=None, ssh_user="dev", branch="main")
+    args.update(kw)
+    return ui.agent_row(**args)
+
+
+def test_collapsed_agent_shows_branch_state_terminal_and_stop():
+    html = _agent()
+    head, detail = html.split('class="adetail"')
+    assert "Agent on <code>main</code>" in head and "Live" in head
+    assert "data-terminal=" in head and 'data-user="dev"' in head
+    assert 'action="/agents/notes/main/stop"' in head and ">Stop</button>" in head
+    assert 'd="M6 3.5 10.5 8 6 12.5"' in head
+
+
+def test_expanded_controls_are_in_the_markup_not_fetched():
+    _, detail = _agent().split('class="adetail"')
+    for text in ("Fresh conversation", "Permission mode", "Screen now",
+                 "Paste the terminal command"):
+        assert text in detail
+    _, detail = _agent(running=False, status="", archivable=True,
+                       stale=True).split('class="adetail"')
+    assert "Fresh anyway" in detail and "Park" in detail and "Archive" in detail
+    assert ">Resume</button>" not in detail
+
+
+def test_reason_shows_while_the_agent_is_collapsed():
+    head, _ = _agent(reason="Remote Control is off").split('class="adetail"')
+    assert "Remote Control is off" in head
+
+
+def test_branch_names_are_escaped_in_title_and_badge():
+    # A branch name comes from the repo and may hold markup.
+    evil = "x<img src=x onerror=alert(1)>"
+    for html in (_agent(branch=evil),
+                 ui.project_row(slug="demo", name="demo", ident="~", branch=evil)):
+        assert "<img" not in html and "&lt;img src=x onerror=alert(1)&gt;" in html
+
+
+def test_terminal_target_is_quoted_for_both_shells():
+    # The local shell strips the double quotes; the box's login shell gets
+    # '=notes/main' still single-quoted, which zsh needs too.
+    expected = 'data-terminal="tmux -u -L agents attach -t &quot;&#x27;=notes/main&#x27;&quot;"'
+    assert expected in _agent(display="notes/main")
+
+
+def test_agent_without_a_known_branch_is_titled_by_name():
+    assert '<div class="name">main</div>' in _agent(branch=None)
+
+
+def test_project_footer_holds_the_project_actions():
+    html = ui.project_row(slug="demo", name="demo", ident="~/projects/demo", run="",
+                          branch="main")
+    foot = html[html.index('class="pfoot"'):]
+    for text in ("+ New agent on its own branch", "Quick question", "Run a command"):
+        assert text in foot
+    assert 'class="pbranch"' in html
+
+
+def test_project_without_a_branch_or_extras_has_neither_badge_nor_them():
+    html = ui.project_row(slug="demo", name="demo", ident="~/x")
+    assert "pbranch" not in html and "Run a command" not in html
+    assert "Quick question" in html
+
+
+def test_nest_puts_agent_rows_inside_their_card():
+    rows = [{"slug": "demo", "html": ui.project_row(slug="demo", name="demo", ident="~")},
+            {"slug": "demo/main", "html": "<div id=a></div>"},
+            {"slug": "other", "html": ui.project_row(slug="other", name="other", ident="~")}]
+    out = ui.nest(rows)
+    assert len(out) == 2 and '<div class="alist"><div id=a></div></div>' in out[0]
+    assert '<div class="alist"></div>' in out[1]

@@ -169,7 +169,8 @@ def create_app(base_dir_fn=None, ctx_fn=None, svc=_service, trust=_trust, disc=_
             broken=v.broken, mode=a.mode, age=_age(v.uptime) if v.running else None,
             active=f"active {_age(int(c.now() - v.last_active))} ago" if not v.running else None,
             mission=v.mission, reason=reason,
-            url=url, stale=_pop(stale, a.key), output=v.running or v.dead, ssh_user=ssh_user)
+            url=url, stale=_pop(stale, a.key), output=v.running or v.dead, ssh_user=ssh_user,
+            branch=_gitremote.head_branch(Path(a.workdir)), own_copy=a.has_worktree)
 
     def project_html(place, blocked, run, listed: bool) -> str:
         label, tone = run_label(run)
@@ -177,7 +178,8 @@ def create_app(base_dir_fn=None, ctx_fn=None, svc=_service, trust=_trust, disc=_
         note = notes.pop(place.slug, None)
         return _ui.project_row(slug=place.slug, name=place.name, ident=_home_relative(place.cwd),
                                warning=note or (_ORIGIN_WARNING if blocked else None),
-                               fix_remote=note is None, **run_kw)
+                               fix_remote=note is None,
+                               branch=_gitremote.head_branch(Path(place.cwd)), **run_kw)
 
     def snapshot() -> dict:
         c = ctx()
@@ -220,7 +222,7 @@ def create_app(base_dir_fn=None, ctx_fn=None, svc=_service, trust=_trust, disc=_
 
     def render() -> str:
         data = snapshot()
-        return _ui.page(rows=[p["html"] for p in data["projects"]], count=data["count"],
+        return _ui.page(rows=_ui.nest(data["projects"]), count=data["count"],
                         usage=data["usage"], signed_in=data["signedIn"],
                         run=bool(allowed_user), parked=data["parked"])
 

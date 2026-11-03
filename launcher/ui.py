@@ -27,6 +27,7 @@ _CSS = """
   --ink-dim: #8ba0af;
   --steel: #2b4557;
   --steel-ink: #d7e6f0;
+  --raised: #1c2a35;
   --live: #3ddc97;
   --wait: #d9a13b;
   --dead: #ff6f61;
@@ -45,6 +46,8 @@ body {
   -webkit-text-size-adjust: 100%;
 }
 .wrap { max-width: 33rem; margin: 0 auto; }
+/* The project list: an agent's title and its buttons share one line. */
+.wrap.wide { max-width: 47.5rem; }
 header { display: flex; align-items: baseline; justify-content: space-between;
          gap: 1rem; margin-bottom: 1.25rem; }
 h1 { font-size: 1.375rem; font-weight: 600; letter-spacing: -0.01em; margin: 0; }
@@ -105,11 +108,9 @@ form.fix, form.gap { margin: .625rem 0 0; }
 .btn.quiet { width: 100%; background: transparent; border-color: var(--edge);
              color: var(--ink-dim); font-weight: 500; font-size: .875rem; }
 
-.new { margin-top: .625rem; }
-.new summary { font-size: .875rem; color: var(--ink-dim); cursor: pointer;
-               padding: .5rem 0; list-style: none; }
+.new summary { display: flex; align-items: center; justify-content: center;
+               list-style: none; }
 .new summary::-webkit-details-marker { display: none; }
-.new summary::before { content: "＋ "; }
 .new input { margin-top: .5rem; }
 
 /* The permission picker. Four chips on one line at phone width, wrapping to
@@ -257,11 +258,75 @@ dialog.runbox::backdrop { background: rgba(0, 0, 0, .6); }
             gap: .75rem; margin-bottom: .75rem; }
 .dlg-head form { margin: 0; }
 .dlg-head .btn { min-width: 0; }
-.row.agent { margin-left: 14px; }
 .row.agent.parked { display: none; }
 body.show-parked .row.agent.parked { display: block; opacity: .7; }
-.row.project { border-left-color: transparent; padding-bottom: 4px; }
 .mission { font-size: 13px; color: var(--ink-dim); margin-top: 4px; }
+
+/* The project card. Its sections carry their own padding so the agent list
+   can run edge to edge between two rules. */
+.row.project { padding: 0; border-left-width: 1px; overflow: hidden; }
+.phead { display: flex; justify-content: space-between; align-items: flex-start;
+         gap: .75rem; padding: .875rem 1rem .625rem; }
+.pwho { min-width: 0; }
+.pbranch { flex: none; max-width: 45%; overflow: hidden; white-space: nowrap;
+           text-overflow: ellipsis; padding: .125rem .5rem; border-radius: .375rem;
+           background: var(--raised); border: 1px solid var(--edge);
+           font-family: var(--mono); font-size: .75rem; }
+.row.project > .warn, .row.project > .why { margin: 0 1rem .625rem; }
+.agents { border-top: 1px solid var(--edge); padding: .5rem .75rem 0; }
+/* No heading over an empty list, nor over one whose agents are all parked
+   out of sight. */
+.agents:not(:has(.row.agent:not(.parked))) { display: none; }
+body.show-parked .agents:has(.row.agent) { display: block; }
+.atitle { padding: 0 .25rem; font-size: .6875rem; text-transform: uppercase;
+          letter-spacing: .08em; color: var(--ink-dim); }
+.pfoot { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center;
+         padding: .625rem .75rem .875rem; border-top: 1px solid var(--edge); }
+.agents + .pfoot { border-top: 0; }
+.pfoot > * { flex: 1 1 10rem; }
+.pfoot > form { margin: 0; }
+.pfoot .btn { width: 100%; }
+.pfoot .new[open] { flex-basis: 100%; }
+.pfoot .runstate { flex: none; }
+
+/* An agent: one line until opened. The rail still carries its state. */
+.row.agent { margin: .5rem 0; padding: 0; background: var(--raised); }
+.ahead { display: flex; align-items: center; gap: .625rem; padding: .625rem .75rem;
+         cursor: pointer; }
+/* The chevron is the script's, so without it there is none: the details
+   are simply always shown. */
+.chev { display: none; flex: none; width: 32px; height: 32px; padding: 0;
+        place-items: center; border: 1px solid var(--edge); border-radius: .375rem;
+        background: transparent; color: var(--ink); cursor: pointer; }
+.js .chev { display: grid; }
+.chev svg { display: block; transition: transform .15s; }
+.row.agent.open .chev svg { transform: rotate(90deg); }
+.ahead:hover .chev { border-color: var(--steel); background: var(--steel); }
+.awho { flex: 1; min-width: 0; }
+.awho .name { font-size: .9375rem; }
+.name code { font-family: var(--mono); font-size: .8125rem; padding: 1px 6px;
+             background: var(--body); border: 1px solid var(--edge); border-radius: .3rem; }
+.awho .meta { margin-top: .125rem; gap: .25rem .625rem; }
+.abtns { display: flex; gap: .5rem; flex: none; }
+.abtns .btn { width: auto; min-width: 0; padding: .5rem .75rem; font-size: .875rem; }
+.row.agent > .why { margin: 0 .75rem .625rem; }
+.adetail { padding: 0 .75rem .75rem 3.375rem; }
+.adetail > .meta { margin-top: 0; }
+.js .row.agent:not(.open) .adetail { display: none; }
+.adbtns { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .625rem; }
+.adbtns form.gap { margin: 0; }
+@media (prefers-reduced-motion: reduce) { .chev svg { transition: none; } }
+/* On a phone the buttons take a line of their own under the title. */
+@media (max-width: 560px) {
+  .ahead { flex-wrap: wrap; }
+  .awho { flex: 1 1 calc(100% - 3.25rem); }
+  .abtns { flex: 1 1 100%; }
+  .js .abtns { padding-left: 2.625rem; }
+  .abtns > *, .abtns form.act { flex: 1; }
+  .abtns .btn { width: 100%; }
+  .adetail { padding-left: .75rem; }
+}
+
 """
 
 # Progressive enhancement: every control is a real form that works without
@@ -277,10 +342,68 @@ _JS = r"""
 (function () {
   var list = document.getElementById('list');
   if (!list) return;
+  // Hides each agent's details until it is opened; see .js in the CSS.
+  document.documentElement.classList.add('js');
   var timer = null;
 
   function rows() { return list.querySelectorAll('.row[data-slug]'); }
   function find(slug) { return list.querySelector('.row[data-slug="' + slug + '"]'); }
+
+  // A project card holds its agents' rows, so a plain querySelector on it
+  // also finds what is inside them. This finds the card's own match only.
+  function own(row, selector) {
+    var found = row.querySelectorAll(selector);
+    for (var i = 0; i < found.length; i++) {
+      if (found[i].closest('.row') === row) return found[i];
+    }
+    return null;
+  }
+
+  // Which agents are open: kept in memory for this page, and in storage per
+  // agent key so a reload keeps it. Storage can be missing or refuse (a
+  // private window); then agents start closed but still open and close.
+  var opened = {};
+  function isOpen(slug) {
+    if (slug in opened) return opened[slug];
+    try { return localStorage.getItem('devbox-open:' + slug) === '1'; } catch (e) { return false; }
+  }
+  function remember(slug, open) {
+    opened[slug] = open;
+    try {
+      if (open) { localStorage.setItem('devbox-open:' + slug, '1'); }
+      else { localStorage.removeItem('devbox-open:' + slug); }
+    } catch (e) { /* not remembered, still toggled */ }
+  }
+  // Applied after every render of a row, so a poll never closes an agent.
+  function dress(row) {
+    if (!row || !row.classList.contains('agent')) return;
+    var open = isOpen(row.dataset.slug);
+    row.classList.toggle('open', open);
+    var chev = own(row, '.chev');
+    if (chev) chev.setAttribute('aria-expanded', open ? 'true' : 'false');
+  }
+
+  // A card is replaced around its agent list: the rows already in it move
+  // into the new card, keeping whatever is open inside them. Each agent row
+  // is replaced on its own, from its own entry in the payload.
+  function replace(row, html) {
+    var holder = document.createElement('div');
+    holder.innerHTML = html;
+    var fresh = holder.firstElementChild;
+    var kids = own(row, '.alist');
+    var slot = own(fresh, '.alist');
+    if (kids && slot) slot.replaceWith(kids);
+    row.replaceWith(fresh);
+    return fresh;
+  }
+
+  // Where a new row goes: an agent into its project's card, anything else
+  // (or an agent whose card is missing) onto the list itself.
+  function home(slug) {
+    var cut = slug.indexOf('/');
+    var card = cut > 0 ? find(slug.slice(0, cut)) : null;
+    return (card && own(card, '.alist')) || list;
+  }
 
   function apply(projects) {
     var seen = {};
@@ -292,17 +415,28 @@ _JS = r"""
       if (row && row.hasAttribute('data-pending')) return;
       // Nor while its output is open: a poll every 20s would otherwise shut the
       // pane you are in the middle of reading.
-      if (row && row.querySelector('details.out[open]')) return;
+      if (row && own(row, 'details.out[open]')) return;
       // Nor while its "New agent" disclosure is open: the same poll would
       // otherwise snap it shut and, worse, wipe a name half-typed on a phone.
       // Belt and braces below — either alone would do, but a background poll
       // eating someone's typing is exactly the failure this guards against.
-      if (row && row.querySelector('details.new[open]')) return;
+      if (row && own(row, 'details.new[open]')) return;
       // Nor while the permission picker is open: a poll landing between
       // reading the modes and tapping one would shut it under the finger.
-      if (row && row.querySelector('details.modes[open]')) return;
-      if (row && row.contains(document.activeElement)) return;
-      if (row) { row.outerHTML = p.html; } else { list.insertAdjacentHTML('beforeend', p.html); }
+      if (row && own(row, 'details.modes[open]')) return;
+      // Nor while focus is in it — except on a chevron, which a click leaves
+      // focused: that would freeze an agent the moment it was opened. The
+      // focus is put back after the swap instead, on the same chevron if it
+      // only moved (into a new card) or on its replacement.
+      var focus = document.activeElement;
+      var chev = !!(row && focus && focus.classList.contains('chev') && row.contains(focus));
+      if (row && !chev && row.contains(focus)) return;
+      if (row) { row = replace(row, p.html); } else {
+        home(p.slug).insertAdjacentHTML('beforeend', p.html);
+        row = find(p.slug);
+      }
+      dress(row);
+      if (chev) (list.contains(focus) ? focus : own(row, '.chev') || focus).focus();
     });
     rows().forEach(function (row) {
       if (!seen[row.dataset.slug] && !row.hasAttribute('data-pending')) row.remove();
@@ -313,15 +447,28 @@ _JS = r"""
   // The payload is ordered running-first. Patching rows in place keeps their
   // old positions, so the order is reapplied by moving the existing nodes —
   // appendChild moves rather than copies, which preserves an open disclosure.
-  // Never while something is pending: a row must not jump out from under the
-  // finger that just tapped it.
+  // Each row moves within its own parent: a card within the list, an agent
+  // within its card. Never while something is pending: a row must not jump
+  // out from under the finger that just tapped it.
   function reorder(projects) {
     if (list.querySelector('.row[data-pending]')) return;
     projects.forEach(function (p) {
       var row = find(p.slug);
-      if (row) list.appendChild(row);
+      if (row) row.parentNode.appendChild(row);
     });
   }
+
+  // Anywhere on an agent's header opens or closes it, bar its own controls.
+  list.addEventListener('click', function (event) {
+    var head = event.target.closest('.ahead');
+    if (!head) return;
+    if (!event.target.closest('.chev') &&
+        event.target.closest('button, a, form, input, summary')) return;
+    var row = head.closest('.row');
+    remember(row.dataset.slug, !row.classList.contains('open'));
+    dress(row);
+  });
+  rows().forEach(dress);
 
   function applyPayload(data) {
     apply(data.projects || []);
@@ -343,7 +490,7 @@ _JS = r"""
     row.setAttribute('data-pending', '');
     button.disabled = true;
     button.textContent = form.dataset.pendingLabel || 'Starting…';
-    var why = row.querySelector('.why');
+    var why = own(row, '.why');
     if (why) why.remove();
     // Sent as a body, not just a slug in the URL: Create carries the typed
     // name as a form field, and an empty body costs nothing for the forms
@@ -493,7 +640,7 @@ _PAGE = """<!doctype html>
 <style>{css}</style>
 </head>
 <body>
-<div class="wrap">
+<div class="wrap wide">
 <header>
   <h1>devbox sessions</h1>
   <span class="count" id="count">{count}</span>{parked}
@@ -571,7 +718,7 @@ _NOTE = """
 # which is the whole cost this design took off the polling path.
 _OUTPUT = """
   <details class="out" data-slug="{slug}">
-    <summary>Show output</summary>
+    <summary>Screen now</summary>
     <pre class="tail">Loading…</pre>
   </details>"""
 
@@ -580,12 +727,12 @@ _OUTPUT = """
 _LINK = """
   <a class="open" href="{url}">Open in the Claude app</a>"""
 
-# The label is only there once a command has been started from this row, and
-# it opens the same modal: closing the modal does not stop the command, so the
-# row is where you find it again.
+# The label is only there once a command has been started from this project,
+# and it opens the same modal: closing the modal does not stop the command, so
+# the card is where you find it again.
 _RUN_ROW = """
-  <div class="runrow">{state}<a class="btn quiet" href="/run/{slug}" data-run="{slug}"
-     data-name="{name}">Run command</a></div>"""
+    <a class="btn quiet" href="/run/{slug}" data-run="{slug}"
+       data-name="{name}">Run a command</a>{state}"""
 
 _RUN_STATE = """<a class="runstate" href="/run/{slug}" data-run="{slug}" data-name="{name}"
      data-tone="{tone}">{label}</a>"""
@@ -593,55 +740,93 @@ _RUN_STATE = """<a class="runstate" href="/run/{slug}" data-run="{slug}" data-na
 _WHY = """
   <div class="why">{reason}</div>"""
 
+# A project is a card: its agents live inside it, in .alist, and its actions
+# in the footer. The agent rows are separate rows in /api/projects, keyed
+# "<project>/<name>"; the server nests them here on a full page load (nest())
+# and the client script moves them across when it replaces the card.
 _PROJECT_ROW = """<div class="row project" data-slug="{slug}" data-state="{state}">
-  <div class="head">
-    <div class="name">{name}</div>
-  </div>
-  <div class="meta"><span class="id">{ident}</span></div>{warn}{new}{run}
+  <div class="phead">
+    <div class="pwho">
+      <div class="name">{name}</div>
+      <div class="meta"><span class="id">{ident}</span></div>
+    </div>{branch}
+  </div>{warn}
+  <div class="agents"><div class="atitle">Claude agents</div>{alist}</div>{foot}
 </div>"""
+
+_ALIST = '<div class="alist"></div>'
+
+_BRANCH = """<span class="pbranch" title="{branch}">&#9095; {branch}</span>"""
+
+_FOOT = """
+  <div class="pfoot">{items}
+  </div>"""
 
 _NEW_AGENT = """
-  <details class="new">
-    <summary>New agent</summary>
-    <form class="gap" method="post" action="/projects/{slug}/new"
-          data-api="/api/projects/{slug}/new" data-pending-label="Creating…">
-      <input name="name" placeholder="name, e.g. drafts" autocapitalize="off"
-             autocomplete="off" spellcheck="false" required>
-      <button class="btn" type="submit">Create</button>
-    </form>
-  </details>
-  <form class="gap" method="post" action="/projects/{slug}/scratch"
-        data-api="/api/projects/{slug}/scratch" data-pending-label="Starting…">
-    <button class="btn" type="submit">Quick chat</button>
-  </form>"""
+    <details class="new">
+      <summary class="btn quiet">+ New agent on its own branch</summary>
+      <form class="gap" method="post" action="/projects/{slug}/new"
+            data-api="/api/projects/{slug}/new" data-pending-label="Creating…">
+        <input name="name" placeholder="name, e.g. drafts" autocapitalize="off"
+               autocomplete="off" spellcheck="false" required>
+        <button class="btn" type="submit">Create</button>
+      </form>
+    </details>
+    <form class="gap" method="post" action="/projects/{slug}/scratch"
+          data-api="/api/projects/{slug}/scratch" data-pending-label="Starting…">
+      <button class="btn quiet" type="submit">Quick question</button>
+    </form>"""
 
+# Collapsed, an agent is one line: which branch, its state, and the two
+# controls you reach for most. The rest is in .adetail, always in the markup so
+# opening it costs no request; the page script hides it until opened, and
+# without the script every agent simply reads as open. The reason line sits
+# outside it: a failure must show whether or not the row is open.
 _AGENT_ROW = """<div class="row agent{cls}" data-slug="{key}" data-state="{state}">
-  <div class="head">
-    <div class="name">{name}</div>
-    <form class="act" method="post" action="/agents/{path}/{action}"
-          data-api="/api/agents/{path}/{action}" data-label="{label}"
-          data-pending-label="{pending}">
-      <button class="btn {btn}" type="submit">{label}</button>
-    </form>
+  <div class="ahead">
+    <button class="chev" type="button" aria-expanded="false" aria-label="Details">{chevron}</button>
+    <div class="awho">
+      <div class="name">{title}</div>
+      <div class="meta">{status}{age}{active}{place}</div>
+    </div>
+    <div class="abtns">{terminal}
+      <form class="act" method="post" action="/agents/{path}/{action}"
+            data-api="/api/agents/{path}/{action}" data-label="{label}"
+            data-pending-label="{pending}">
+        <button class="btn {btn}" type="submit">{label}</button>
+      </form>
+    </div>
+  </div>{why}
+  <div class="adetail">
+    <div class="meta"><span class="id">{display}</span></div>{mission}{buttons}{note}{permission}{link}{output}
   </div>
-  <div class="meta">{status}{age}{active}<span class="id">{display}</span></div>{mission}{why}{buttons}{permission}{link}{output}
 </div>"""
 
-_AGENT_BUTTON = """
-  <form class="gap" method="post" action="/agents/{path}/{action}"
-        data-api="/api/agents/{path}/{action}" data-pending-label="{pending}">{fields}
-    <button class="btn" type="submit">{label}</button>
-  </form>"""
+_CHEVRON = ('<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">'
+            '<path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor" stroke-width="2" '
+            'stroke-linecap="round" stroke-linejoin="round"/></svg>')
 
-_MISSION = """<div class="mission">{text}</div>"""
+_AGENT_BUTTONS = """
+    <div class="adbtns">{buttons}
+    </div>"""
+
+_AGENT_BUTTON = """
+      <form class="gap" method="post" action="/agents/{path}/{action}"
+            data-api="/api/agents/{path}/{action}" data-pending-label="{pending}">{fields}
+        <button class="btn" type="submit">{label}</button>
+      </form>"""
+
+_MISSION = """
+    <div class="mission">{text}</div>"""
 
 # The host is filled in by the page script from the address the launcher was
 # opened at, which is the box's tailnet name.
 _TERMINAL = """
-  <div class="terminal">
-    <button class="btn quiet" type="button" data-terminal="{attach}" data-user="{user}">Copy terminal command</button>
-    <div class="note">Paste into your own terminal. Ctrl-b d detaches; the agent keeps running.</div>
-  </div>"""
+      <button class="btn quiet" type="button" data-terminal="{attach}" data-user="{user}">Copy terminal command</button>"""
+
+_TERMINAL_NOTE = """
+    <div class="note">Paste the terminal command into your own terminal. Ctrl-b d detaches;
+    the agent keeps running.</div>"""
 
 # A page-level problem carried as a row, so it comes and goes with the polls
 # like any other: tmux on the agents socket not answering, say.
@@ -670,16 +855,38 @@ def permission_label(mode: str | None) -> str:
 
 
 def project_row(*, slug, name, ident, warning=None, fix_remote=True, run=None,
-                run_tone="", new=True) -> str:
-    return _PROJECT_ROW.format(
-        slug=escape(slug), state="project", name=escape(name), ident=escape(ident),
-        warn=(_WARN if fix_remote else _NOTE).format(text=escape(warning), slug=escape(slug))
-        if warning else "",
-        new=_NEW_AGENT.format(slug=escape(slug)) if new else "",
-        run="" if run is None else _RUN_ROW.format(
+                run_tone="", new=True, branch=None) -> str:
+    """One project card, with an empty agent list for nest() or the page
+    script to fill. `branch` is the checkout's branch, or None to show none."""
+    items = (
+        (_NEW_AGENT.format(slug=escape(slug)) if new else "")
+        + ("" if run is None else _RUN_ROW.format(
             slug=escape(slug), name=escape(name),
             state=_RUN_STATE.format(slug=escape(slug), name=escape(name), tone=escape(run_tone),
-                                    label=escape(run)) if run else ""))
+                                    label=escape(run)) if run else "")))
+    return _PROJECT_ROW.format(
+        slug=escape(slug), state="project", name=escape(name), ident=escape(ident),
+        branch=_BRANCH.format(branch=escape(branch)) if branch else "",
+        warn=(_WARN if fix_remote else _NOTE).format(text=escape(warning), slug=escape(slug))
+        if warning else "",
+        alist=_ALIST, foot=_FOOT.format(items=items) if items else "")
+
+
+def nest(rows: list[dict]) -> list[str]:
+    """The /api/projects rows as the page draws them: each agent row inside
+    its project's card. An agent whose project has no card stays top-level."""
+    agents: dict[str, list[str]] = {}
+    for row in rows:
+        if "/" in row["slug"]:
+            agents.setdefault(row["slug"].split("/", 1)[0], []).append(row["html"])
+    out = []
+    for row in rows:
+        if "/" in row["slug"]:
+            continue
+        inner = "\n".join(agents.pop(row["slug"], []))
+        out.append(row["html"].replace(_ALIST, f'<div class="alist">{inner}</div>', 1)
+                   if inner else row["html"])
+    return out + [html for orphans in agents.values() for html in orphans]
 
 
 def notice_row(*, slug, title, text) -> str:
@@ -694,9 +901,13 @@ def _agent_button(path, action, label, pending, force=False) -> str:
 
 def agent_row(*, key, name, display, state, status, running, parked, scratch, archivable,
               resumable, broken, mode, age=None, active=None, mission=None, reason=None,
-              url=None, stale=False, output=None, ssh_user=None) -> str:
+              url=None, stale=False, output=None, ssh_user=None, branch=None,
+              own_copy=False) -> str:
     """One agent. `state` is the rail colour and the client's marker, as on
-    project rows before: connected / starting / ready / failed / stopped."""
+    project rows before: connected / starting / ready / failed / stopped.
+    `branch` is what its working directory has checked out (None: unknown, and
+    the row is titled by name); `own_copy` says that directory is a worktree
+    of its own rather than the project's checkout."""
     path = key                       # "<project>/<name>": both segments are slugs
     if broken:
         action, label, pending, btn = "repair", "Recreate worktree", "Recreating…", "start"
@@ -714,15 +925,23 @@ def agent_row(*, key, name, display, state, status, running, parked, scratch, ar
         buttons.append(_agent_button(path, "park", "Park", "Parking…"))
     if archivable and not running:
         buttons.append(_agent_button(path, "archive", "Archive", "Archiving…"))
+    terminal = note = ""
     if running and ssh_user and not broken:
         # Quoted twice, as ssh hands the box's login shell the command as one
         # string: zsh, on either side, expands a word starting with "=". Both
         # name segments are slugs, so no quote can be inside.
         attach = f"tmux -u -L {SOCKET} attach -t \"'={display}'\""
-        buttons.append(_TERMINAL.format(attach=escape(attach), user=escape(ssh_user)))
+        terminal = _TERMINAL.format(attach=escape(attach), user=escape(ssh_user))
+        note = _TERMINAL_NOTE
+    if scratch:
+        title, place = "Quick question", ""
+    else:
+        title = f"Agent on <code>{escape(branch)}</code>" if branch else escape(name)
+        place = _AGE.format(age="own copy of the repo" if own_copy else "project folder")
     return _AGENT_ROW.format(
         cls=" parked" if parked else "", key=escape(key), state=escape(state),
-        name=escape(name), path=escape(path), action=action, label=escape(label),
+        chevron=_CHEVRON, title=title, place=place, terminal=terminal, note=note,
+        path=escape(path), action=action, label=escape(label),
         pending=escape(pending), btn=btn,
         status=f'<span class="state">{escape(status)}</span>' if status else "",
         age=_AGE.format(age=escape(age)) if age else "",
@@ -730,7 +949,7 @@ def agent_row(*, key, name, display, state, status, running, parked, scratch, ar
         display=escape(display),
         mission=_MISSION.format(text=escape(mission)) if mission else "",
         why=_WHY.format(reason=escape(reason)) if reason else "",
-        buttons="".join(buttons),
+        buttons=_AGENT_BUTTONS.format(buttons="".join(buttons)) if buttons else "",
         permission="" if scratch else _permission_agent(path, mode, running),
         link=_LINK.format(url=escape(url)) if url else "",
         output=_OUTPUT.format(slug=escape(key)) if (running if output is None else output) else "")

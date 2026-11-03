@@ -164,7 +164,7 @@ def test_clean_exit_row_is_stopped_not_failed(app_world):
     app_world.tmux.sessions["notes/main"].update(dead=True, exit_status=0)
     html = rows(app_world)["notes/main"]
     assert 'data-state="stopped"' in html and "Start failed" not in html
-    assert "Crashed" not in html and "Show output" not in html
+    assert "Crashed" not in html and "Screen now" not in html
 
 
 def test_crash_row_is_red_with_exit_code_and_output(app_world):
@@ -173,7 +173,7 @@ def test_crash_row_is_red_with_exit_code_and_output(app_world):
                                                  pane="Error: API went away\n")
     html = rows(app_world)["notes/main"]
     assert 'data-state="failed"' in html and "Crashed (exit 3)" in html
-    assert "Show output" in html
+    assert "Screen now" in html
     lines = app_world.client.get("/api/pane/notes/main").json()["lines"]
     assert lines == ["Error: API went away"]
 
@@ -196,3 +196,32 @@ def test_agent_that_never_connects_says_why(app_world):
     app_world.tmux.sessions["notes/main"]["screen"] = blocked
     html = rows(app_world)["notes/main"]
     assert "Remote Control is disabled by your organization&#x27;s policy." in html
+
+
+# --- the project card and its agents -----------------------------------------
+
+def test_agent_title_names_the_branch_it_works_on(app_world):
+    app_world.client.post("/api/projects/notes/new", data={"name": "drafts"})
+    r = rows(app_world)
+    assert "Agent on <code>main</code>" in r["notes/main"]
+    assert "project folder" in r["notes/main"]
+    assert "Agent on <code>agent/drafts</code>" in r["notes/drafts"]
+    assert "own copy of the repo" in r["notes/drafts"]
+
+
+def test_scratch_agent_is_titled_quick_question(app_world):
+    app_world.client.post("/api/projects/notes/scratch")
+    html = next(h for k, h in rows(app_world).items() if k.startswith("notes/scratch-"))
+    assert "Quick question" in html and "Agent on" not in html
+
+
+def test_project_card_shows_its_branch(app_world):
+    assert '<span class="pbranch" title="main">' in rows(app_world)["notes"]
+
+
+def test_page_draws_agents_inside_their_project_card(app_world):
+    html = app_world.client.get("/").text
+    card = html.index('data-slug="notes"')
+    agent = html.index('data-slug="notes/main"')
+    foot = html.index('class="pfoot"', card)
+    assert card < html.index('class="alist"', card) < agent < foot

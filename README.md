@@ -135,15 +135,22 @@ There are three kinds:
 
 - **main** — every project's default agent. Works in the project checkout
   itself. Can be stopped and parked, never archived.
-- **named agent** — created with **New agent** on a project row (or
+- **named agent** — created with **+ New agent on its own branch** at the
+  foot of a project's card (or
   `agentctl new <project>/<name>`). Works in its own git worktree,
   `<launch dir>/.claude/worktrees/<name>`, on branch `agent/<name>`, so several
   agents can edit the same repo at once.
-- **scratch** — **Quick chat**, a throwaway session for a one-off question.
+- **scratch** — **Quick question**, a throwaway session for a one-off question.
   No brief, branch or worktree; deleted when stopped, and by the reaper after
   12 idle hours.
 
-A row's button is **Start** (**Resume** when it has a conversation to come
+Each project is a card with its agents under *Claude agents*. An agent is
+titled by the branch its directory has checked out (*Agent on `main`*) and is
+collapsed to one line: its state, **Copy terminal command** while it runs, and
+its main button. Tap the line to open it for Fresh, Park, Archive, the
+permission mode and **Screen now**; the browser remembers which are open.
+
+An agent's main button is **Start** (**Resume** when it has a conversation to come
 back to), **Stop** when running, or **Recreate worktree** when the worktree has
 been deleted from disk. Start takes a few seconds while it waits for Claude to
 say `/remote-control is active`; then tap **Open in the Claude app**, or pick
@@ -154,12 +161,12 @@ say `/remote-control is active`; then tap **Open in the Claude app**, or pick
 | green — *Live* | connected; reachable from the app |
 | amber — *Starting…* / *Not connected* | running, Remote Control not up (yet) |
 | red — *Start failed* | Claude exited on start; its error is shown |
-| red — *Crashed (exit N)* | Claude died after it had started; *Show output* has its last lines |
+| red — *Crashed (exit N)* | Claude died after it had started; *Screen now* has its last lines |
 | red — *Worktree missing* | the agent's worktree is gone; **Recreate worktree** rebuilds it from the branch |
 | none | stopped |
 
 A live row shows how long it has been up; a stopped one when it was last
-active. **Show output** expands the last 20 lines of the pane.
+active. **Screen now** expands the last 20 lines of the pane.
 
 ### Briefs, `/handoff` and Fresh
 
@@ -286,8 +293,8 @@ the agent with Fresh.
 
 Claude sometimes needs **you** to run a command: one its permission check
 refuses (it changes production) or one that waits for input (a login). Over
-Remote Control `! <command>` cannot be typed, so each project row can carry a
-**Run command** button. It opens a modal: paste the command, tap **Run**, and
+Remote Control `! <command>` cannot be typed, so each project card can carry a
+**Run a command** button. It opens a modal: paste the command, tap **Run**, and
 it runs in the project's launch dir with the output shown live. A prompt? Type
 the answer and **Send**. **Ctrl-C** interrupts. When it exits, **Copy output**
 copies command, output and exit code for pasting back to Claude.
@@ -354,7 +361,7 @@ python docs/demo_server.py --signed-out    # the signed-out banner   (viewport)
 
 The Run command modal is the third image: with the server in its default
 mode, send the `Tailscale-User-Login: you@example.com` header (the demo's
-configured run user), tap **Run command** on the `blog` row, and capture the
+configured run user), tap **Run a command** on the `blog` card, and capture the
 viewport.
 
 ## License
