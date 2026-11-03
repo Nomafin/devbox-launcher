@@ -38,6 +38,12 @@ Anyone who can open the UI can:
   without asking. `bypassPermissions` and `dontAsk` are not offered, and the
   server refuses any mode outside that list, so the page cannot be used to
   switch the permission check off entirely;
+- **with `LAUNCHER_GITHUB=1`: see the names of every repo the box's `gh` account
+  can reach, clone any of them, switch a checkout's branch, and create empty
+  private repos on that account.** A cloned repo lands under the base dir, whose
+  projects are pre-trusted when an agent starts there, so Claude reads its
+  settings and hooks without asking. Give the box a GitHub account that reaches
+  only what its agents may touch;
 - **run arbitrary shell commands as your user**, *if* you have enabled **Run
   command** by setting `LAUNCHER_RUN_USER` — see below.
 
