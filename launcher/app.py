@@ -67,6 +67,12 @@ def _age(seconds: int | None) -> str:
 _FROM_ENV = object()
 
 
+# A session that runs but never connects. The usual cause is the claude.ai
+# organization's policy, which Claude Code does not mention at start.
+# Read off the screen, so an agent that is connected but has a prompt or a
+# long answer covering the status line reads the same: hence "Show output".
+_NOT_CONNECTED = ("Remote Control has not shown as connected. Show output to see whether "
+                  "the agent is waiting for an answer.")
 _AGENT_STATES = {"connected": "Live", "starting": "Starting…", "ready": "Not connected",
                  "failed": "Start failed", "stopped": "", "broken": "Worktree missing"}
 
@@ -150,6 +156,10 @@ def create_app(base_dir_fn=None, ctx_fn=None, svc=_service, trust=_trust, disc=_
             status = ("Crashed" if v.exit_status is None
                       else f"Crashed (exit {v.exit_status})")
         url = _runtime.url(_runtime.pane(c.home, a.display, c.run)) if v.connected else None
+        reason = notes.pop(a.key, None) or a.last_error
+        if state == "ready" and not reason:
+            reason = (_runtime.blocked(_runtime.screen(c.home, a.display, c.run))
+                      or _NOT_CONNECTED)
         return _ui.agent_row(
             key=a.key, name=a.name if a.name != MAIN else "main", display=a.display,
             state="failed" if state == "broken" else state, status=status,
@@ -157,7 +167,7 @@ def create_app(base_dir_fn=None, ctx_fn=None, svc=_service, trust=_trust, disc=_
             scratch=a.kind == SCRATCH, archivable=a.has_worktree, resumable=bool(a.session_id),
             broken=v.broken, mode=a.mode, age=_age(v.uptime) if v.running else None,
             active=f"active {_age(int(c.now() - v.last_active))} ago" if not v.running else None,
-            mission=v.mission, reason=notes.pop(a.key, None) or a.last_error,
+            mission=v.mission, reason=reason,
             url=url, stale=_pop(stale, a.key), output=v.running or v.dead)
 
     def project_html(place, blocked, run, listed: bool) -> str:
@@ -420,7 +430,7 @@ def create_app(base_dir_fn=None, ctx_fn=None, svc=_service, trust=_trust, disc=_
             slug=project.slug, command=record.get("command", ""),
             cwd=_home_relative(record["cwd"]) if record.get("cwd") else "",
             output=runner.output(project.slug), running=status.running,
-            exit_code=status.exit_code)
+            exit_code=status.exit_code, signal=status.signal)
 
     def run_state(project) -> dict:
         status = runner.status(project.slug)
