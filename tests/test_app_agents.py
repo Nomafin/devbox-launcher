@@ -225,3 +225,24 @@ def test_page_draws_agents_inside_their_project_card(app_world):
     agent = html.index('data-slug="notes/main"')
     foot = html.index('class="pfoot"', card)
     assert card < html.index('class="alist"', card) < agent < foot
+
+
+# --- writes come from this page ----------------------------------------------
+
+@pytest.mark.parametrize("headers", [{"Sec-Fetch-Site": "cross-site"},
+                                     {"Origin": "https://evil.example"}])
+def test_write_from_another_site_is_refused(app_world, headers):
+    r = app_world.client.post("/api/agents/notes/main/start", headers=headers)
+    assert r.status_code == 403
+    assert "notes/main" not in app_world.tmux.sessions
+
+
+@pytest.mark.parametrize("headers", [{"Sec-Fetch-Site": "same-origin"}, {}])
+def test_write_from_this_page_or_a_terminal_is_allowed(app_world, headers):
+    r = app_world.client.post("/api/agents/notes/main/start", headers=headers)
+    assert r.status_code == 200
+    assert "notes/main" in app_world.tmux.sessions
+
+
+def test_reading_from_another_site_is_not_refused(app_world):
+    assert app_world.client.get("/", headers={"Sec-Fetch-Site": "cross-site"}).status_code == 200
