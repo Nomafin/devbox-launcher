@@ -424,19 +424,21 @@ _JS = r"""
       // Nor while the permission picker is open: a poll landing between
       // reading the modes and tapping one would shut it under the finger.
       if (row && own(row, 'details.modes[open]')) return;
-      // Nor while focus is in it — except on a chevron, which a click leaves
-      // focused: that would freeze an agent the moment it was opened. The
-      // focus is put back after the swap instead, on the same chevron if it
-      // only moved (into a new card) or on its replacement.
+      // Nor while focus is in it — except on a chevron or the copy button,
+      // which a click leaves focused: that would freeze an agent the moment
+      // it was used. The focus is put back after the swap instead, on the same
+      // button if it only moved (into a new card) or on its replacement.
       var focus = document.activeElement;
-      var chev = !!(row && focus && focus.classList.contains('chev') && row.contains(focus));
-      if (row && !chev && row.contains(focus)) return;
+      var kept = !focus || !row || !row.contains(focus) ? null
+        : focus.matches('.chev') ? '.chev'
+        : focus.matches('button[data-terminal]') ? 'button[data-terminal]' : null;
+      if (row && !kept && row.contains(focus)) return;
       if (row) { row = replace(row, p.html); } else {
         home(p.slug).insertAdjacentHTML('beforeend', p.html);
         row = find(p.slug);
       }
       dress(row);
-      if (chev) (list.contains(focus) ? focus : own(row, '.chev') || focus).focus();
+      if (kept) (list.contains(focus) ? focus : own(row, kept) || focus).focus();
     });
     rows().forEach(function (row) {
       if (!seen[row.dataset.slug] && !row.hasAttribute('data-pending')) row.remove();
@@ -508,6 +510,10 @@ _JS = r"""
         // never sees the busy row clear, polling at 4s instead of 20s for
         // good.
         row.removeAttribute('data-pending');
+        // Its own form succeeded, so the disclosure has done its job; left
+        // open, apply() would skip the card and Create would stay disabled.
+        var disclosure = form.closest('details.new');
+        if (disclosure) disclosure.open = false;
         applyPayload(data);
       })
       .catch(function () {
