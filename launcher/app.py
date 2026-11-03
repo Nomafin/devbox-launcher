@@ -4,7 +4,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from fastapi import FastAPI, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 
 from . import authctl as _authctl
 from . import discovery as _discovery
@@ -63,6 +63,17 @@ def _age(seconds: int | None) -> str:
     return f"{seconds // 86400}d"
 
 
+def same_origin(request: Request) -> bool:
+    site = request.headers.get("sec-fetch-site")
+    if site is not None:
+        return site == "same-origin"
+    origin = request.headers.get("origin")
+    if origin is None:
+        return True
+    hosts = {request.headers.get("host"), request.headers.get("x-forwarded-host")}
+    return urlsplit(origin).netloc in hosts
+
+
 # create_app(run_user=...) left out: read LAUNCHER_RUN_USER. None disables it.
 _FROM_ENV = object()
 
@@ -98,6 +109,14 @@ def create_app(base_dir_fn=None, ctx_fn=None, svc=_service, trust=_trust, disc=_
     stale: set[str] = set()
 
     app = FastAPI()
+
+    # Every write must come from this page: a form on some other site, opened
+    # on the phone, must not drive the launcher.
+    @app.middleware("http")
+    async def same_origin_writes(request: Request, call_next):
+        if request.method not in ("GET", "HEAD") and not same_origin(request):
+            return PlainTextResponse("Not allowed.", status_code=403)
+        return await call_next(request)
 
     def resolve(slug: str):
         """A discovered project, for Run command: it runs in a project's own
@@ -387,16 +406,6 @@ def create_app(base_dir_fn=None, ctx_fn=None, svc=_service, trust=_trust, disc=_
     # Every route has an /api/* twin returning run_state() — including the
     # server-rendered panel — which is what the main page's modal drives. The
     # plain routes serve /run/<slug>, the same panel as a page, for no-JS use.
-    def same_origin(request: Request) -> bool:
-        site = request.headers.get("sec-fetch-site")
-        if site is not None:
-            return site == "same-origin"
-        origin = request.headers.get("origin")
-        if origin is None:
-            return True
-        hosts = {request.headers.get("host"), request.headers.get("x-forwarded-host")}
-        return urlsplit(origin).netloc in hosts
-
     def run_allowed(request: Request) -> bool:
         if not allowed_user or request.headers.get("tailscale-user-login") != allowed_user:
             return False
