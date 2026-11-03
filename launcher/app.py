@@ -4,13 +4,15 @@ import time
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from fastapi import FastAPI, Form, Request
+from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 
 from . import authctl as _authctl
 from . import discovery as _discovery
+from . import github as _github
 from . import gitremote as _gitremote
 from . import hostinfo as _hostinfo
+from . import projects as _projects
 from . import runctl as _runctl
 from . import tmuxctl as _tmuxctl
 from . import trust as _trust
@@ -21,6 +23,8 @@ from .agents import runtime as _runtime
 from .agents import service as _service
 from .agents.model import ARCHIVED, MAIN, PARKED, SCRATCH, SEP, AgentError
 from .config import base_dir as _base_dir
+from .config import github as _github_on
+from .config import github_invites_from as _invites_from
 from .config import run_user as _run_user
 
 log = logging.getLogger("launcher")
@@ -101,9 +105,15 @@ def _pop(marks: set, key) -> bool:
 
 def create_app(base_dir_fn=None, ctx_fn=None, svc=_service, trust=_trust, disc=_discovery,
                auth=_authctl, git=_gitremote, host=_hostinfo, runner=_runctl,
-               run_user=_FROM_ENV) -> FastAPI:
+               run_user=_FROM_ENV, github_on=_FROM_ENV, invites_from=_FROM_ENV, gh=None,
+               jobs=None, projects_run=None) -> FastAPI:
     resolve_base = base_dir_fn or _base_dir
     allowed_user = _run_user() if run_user is _FROM_ENV else run_user
+    use_github = _github_on() if github_on is _FROM_ENV else github_on
+    accept_from = _invites_from() if invites_from is _FROM_ENV else invites_from
+    gh = gh or _github.Client()
+    git_run = projects_run or _projects.default_run
+    clone_jobs = jobs or _projects.CloneJobs()
     # Who to ssh in as for an agent's terminal: the user the launcher runs as.
     ssh_user = getpass.getuser()
 
@@ -245,7 +255,8 @@ def create_app(base_dir_fn=None, ctx_fn=None, svc=_service, trust=_trust, disc=_
         data = snapshot()
         return _ui.page(rows=_ui.nest(data["projects"]), count=data["count"],
                         usage=data["usage"], signed_in=data["signedIn"],
-                        run=bool(allowed_user), parked=data["parked"])
+                        run=bool(allowed_user), parked=data["parked"],
+                        github=use_github)
 
     def place_of(c, slug):
         return _places.by_slug(c.base_dir, slug, _registry.load(c.root))
@@ -406,6 +417,132 @@ def create_app(base_dir_fn=None, ctx_fn=None, svc=_service, trust=_trust, disc=_
         auth.cancel()
         _forget_signed_in()     # the cached "logged out" is now wrong
         log.info("login: signed in")
+        return RedirectResponse("/", status_code=303)
+
+    # --- GitHub: clone, new project ----------------------------------------
+    # Every GithubError and ProjectError carries a message fit for the page,
+    # and lands there: a lapsed login is a thing to fix, not a 500.
+    def require_github() -> None:
+        if not use_github:
+            raise HTTPException(status_code=404)
+
+    def clone_list_html(query: str = "", error: str | None = None,
+                        accepted: list[str] = ()) -> str:
+        try:
+            repos = gh.repos(query)
+        except _github.GithubError as exc:
+            return _ui.clone_list_page(query=query, repos=[], error=error or str(exc))
+        base = resolve_base()
+        return _ui.clone_list_page(query=query, error=error, accepted=accepted, repos=[{
+            "slug": r.slug, "name": r.full_name, "description": r.description,
+            "date": r.updated_on[:10],
+            "cloned": _projects.valid_name(r.slug) and (base / r.slug).exists()} for r in repos])
+
+    def clone_status_html(slug: str, error: str | None = None) -> str:
+        if not _projects.valid_name(slug):
+            return _ui.clone_status_page(slug=slug, state="unknown")
+        status = clone_jobs.status(slug)
+        path = resolve_base() / slug
+        if status is None:
+            # Back after a restart, or from a bookmark: a clone that is
+            # already here can still have its branch picked.
+            state = "done" if (path / ".git").exists() else "unknown"
+        else:
+            state = status.state
+        if state != "done":
+            return _ui.clone_status_page(slug=slug, state=state,
+                                         error=status.error if status else None)
+        return _ui.clone_status_page(slug=slug, state="done", error=error,
+                                     branches=_projects.remote_branches(path, git_run),
+                                     current=_projects.current_branch(path, git_run))
+
+    @app.get("/clone", response_class=HTMLResponse)
+    def clone_list(q: str = "") -> str:
+        require_github()
+        accepted, error = [], None
+        # Here, so a repo shared a moment ago is on the list this page shows.
+        if accept_from:
+            try:
+                accepted = gh.accept_invitations(accept_from)
+            except _github.GithubError as exc:
+                error = str(exc)
+        return clone_list_html(q, error, accepted)
+
+    @app.post("/clone")
+    def clone_start(repo: str = Form("")):
+        require_github()
+        try:
+            # From the list, never from the form: only what the account can
+            # reach, with the URL GitHub gave for it.
+            found = next((r for r in gh.repos() if r.full_name == repo), None)
+            if found is None:
+                return HTMLResponse(clone_list_html(error="No such repository."))
+            clone_jobs.start(resolve_base(), found)
+        except (_github.GithubError, _projects.ProjectError) as exc:
+            return HTMLResponse(clone_list_html(error=str(exc)))
+        log.info("clone: started %s", repo)
+        return RedirectResponse(f"/clone/{found.slug}", status_code=303)
+
+    @app.get("/clone/{slug}", response_class=HTMLResponse)
+    def clone_status(slug: str) -> str:
+        require_github()
+        return clone_status_html(slug)
+
+    def agent_in_checkout(path: Path, slug: str) -> str | None:
+        """Why the checkout at `path` must keep its branch, or None. A running
+        agent there (main, scratch) would carry on, unaware, on the new one;
+        named agents work in worktrees of their own and do not count."""
+        c = ctx()
+        place = place_of(c, slug)
+        try:
+            views = svc.views(c, places=[place] if place is not None else [])
+        except AgentError as exc:
+            # Not knowing what runs there is no reason to switch under it.
+            return str(exc)
+        here = path.resolve()
+        if any(v.running and Path(v.agent.workdir).resolve() == here for v in views):
+            return "Stop the agent first, then switch branches."
+        return None
+
+    @app.post("/clone/{slug}/branch")
+    def clone_branch(slug: str, branch: str = Form(""), new: str = Form("")):
+        require_github()
+        path = resolve_base() / slug if _projects.valid_name(slug) else None
+        if path is None or not (path / ".git").exists():
+            return HTMLResponse(clone_status_html(slug))
+        busy = agent_in_checkout(path, _discovery.slugify(slug))
+        if busy:
+            return HTMLResponse(clone_status_html(slug, busy))
+        branch = branch.strip()
+        try:
+            _projects.checkout(path, branch, new == "1", git_run)
+        except _projects.ProjectError as exc:
+            return HTMLResponse(clone_status_html(slug, str(exc)))
+        # Keyed as discovery will slug the directory, so it lands on that row.
+        notes[_discovery.slugify(slug)] = f"On branch {branch} — tap Start."
+        return RedirectResponse("/", status_code=303)
+
+    @app.get("/new-project", response_class=HTMLResponse)
+    def new_project_get() -> str:
+        require_github()
+        return _ui.new_project_page()
+
+    @app.post("/new-project")
+    def new_project_post(name: str = Form(""), with_repo: str = Form("", alias="github")):
+        require_github()
+        name = name.strip()
+        try:
+            path = _projects.init_project(resolve_base(), name, git_run)
+        except _projects.ProjectError as exc:
+            return HTMLResponse(_ui.new_project_page(name=name, error=str(exc)))
+        log.info("new-project: created %s", path)
+        if with_repo == "1":
+            try:
+                gh.create_repo(name, path)
+            except _github.GithubError as exc:
+                # The project is made; the card says what is missing.
+                notes[_discovery.slugify(name)] = str(exc)
+                log.warning("new-project: %s: %s", name, exc)
         return RedirectResponse("/", status_code=303)
 
     # --- running a command ------------------------------------------------
