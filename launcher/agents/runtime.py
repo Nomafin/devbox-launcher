@@ -169,8 +169,14 @@ def answer_trust_prompt(home, name: str, run: Runner) -> None:
     run(tmux(home, "send-keys", "-t", f"={name}:", "Up", "Enter"))
 
 
-def claude_command(agent: Agent, *, fresh: bool, seed: Path | None, extra=()) -> str:
+def claude_command(agent: Agent, *, fresh: bool, seed: Path | None, extra=(),
+                   brief_dir: Path | None = None) -> str:
     parts = ["claude", "--remote-control", agent.display, "-n", agent.display]
+    # The brief is outside the workdir, and the agent is told to keep it current.
+    # Without this it stops at a permission question nobody may be there to
+    # answer. Never last: --add-dir takes every word after it, a prompt included.
+    if brief_dir is not None:
+        parts += ["--add-dir", str(brief_dir)]
     if fresh:
         parts += ["--session-id", agent.session_id]
         if seed is not None:
