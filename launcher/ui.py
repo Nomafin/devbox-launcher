@@ -448,10 +448,13 @@ _JS = r"""
     if (!button) return;
     var command = 'ssh -t ' + button.dataset.user + '@' + location.hostname + ' ' +
                   button.dataset.terminal;
-    var fallback = function () { window.prompt('Copy this command:', command); };
+    // A click leaves focus on the button, and apply() skips a row holding
+    // focus: without the blur the row would stop updating until you tapped
+    // somewhere else.
+    var fallback = function () { window.prompt('Copy this command:', command); button.blur(); };
     if (!navigator.clipboard) return fallback();
     navigator.clipboard.writeText(command).then(
-      function () { button.textContent = 'Copied'; }, fallback);
+      function () { button.textContent = 'Copied'; button.blur(); }, fallback);
   });
 
   // Run command: a modal over the list rather than a page of its own. The
