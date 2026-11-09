@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>devbox.launcher</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>@VENV@/bin/python</string>
+    <string>-m</string>
+    <string>launcher</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>LAUNCHER_BASE_DIR</key>
+    <string>@BASE_DIR@</string>
+    <key>LAUNCHER_HOST</key>
+    <string>@HOST@</string>
+    <key>LAUNCHER_PORT</key>
+    <string>@PORT@</string>
+    <!-- Who may use "Run command" (matched against Tailscale-User-Login). Empty = off. -->
+    <key>LAUNCHER_RUN_USER</key>
+    <string>@RUN_USER@</string>
+    <key>PATH</key>
+    <string>@CLAUDE_BIN_DIR@:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <!-- launchd sets no locale, and agents print UTF-8. -->
+    <key>LANG</key>
+    <string>en_US.UTF-8</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <!-- Restarted after a crash, not after a clean stop. launchd has no start
+       limit like systemd's, so a bad deploy keeps retrying every 5 seconds:
+       launcher.log is where that shows. -->
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
+  <key>ThrottleInterval</key>
+  <integer>5</integer>
+  <!-- An agents tmux server started from the UI is a child of this job. Without
+       this, launchd could take running agents down when the job restarts. -->
+  <key>AbandonProcessGroup</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>@LOG_DIR@/launcher.log</string>
+  <key>StandardErrorPath</key>
+  <string>@LOG_DIR@/launcher.log</string>
+</dict>
+</plist>
