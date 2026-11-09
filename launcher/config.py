@@ -3,8 +3,17 @@ from pathlib import Path
 
 
 def base_dir() -> Path:
+    """The environment, then what install.sh recorded, then the default. The
+    record is what agentctl has in a terminal or over ssh, where the service's
+    environment is not set."""
     env = os.environ.get("LAUNCHER_BASE_DIR")
-    return Path(env) if env else Path.home() / "projects"
+    if env:
+        return Path(env)
+    try:
+        recorded = (Path.home() / ".config" / "devbox-launcher" / "base-dir").read_text().strip()
+    except OSError:
+        recorded = ""
+    return Path(recorded) if recorded else Path.home() / "projects"
 
 
 def run_user() -> str | None:

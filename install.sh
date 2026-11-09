@@ -78,6 +78,10 @@ command -v tailscale >/dev/null || warn "tailscale is not installed; see SECURIT
 note "creating the project base dir ($BASE_DIR)"
 mkdir -p "$BASE_DIR"
 
+# For agentctl in a terminal, where the units' environment is not set.
+mkdir -p "$HOME/.config/devbox-launcher"
+printf '%s\n' "$BASE_DIR" > "$HOME/.config/devbox-launcher/base-dir"
+
 note "creating the venv ($VENV)"
 mkdir -p "$(dirname "$VENV")"
 [ -x "$VENV/bin/python" ] || python3 -m venv "$VENV"

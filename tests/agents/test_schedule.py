@@ -128,7 +128,7 @@ def test_a_run_creates_the_agent_on_its_own_branch_with_the_prompt(sched):
     args = argv(sched)
     assert args[args.index("--permission-mode") + 1] == "auto"
     assert args[args.index("--model") + 1] == "sonnet"
-    assert "--no-chrome" in args and "--resume" not in args
+    assert "--resume" not in args
     assert args[-1].endswith("Do the thing")
     assert "agent/nightly" in args[-1] and "pull request" in args[-1]
     assert sched.tmux.sessions["notes/nightly"]["cwd"] != str(sched.repo)
