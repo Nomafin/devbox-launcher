@@ -329,13 +329,11 @@ the launcher stores no token.
 search box. A repo is cloned in the background into
 `<LAUNCHER_BASE_DIR>/.cloning/<name>` and moved into place only when complete, so
 a half-done or failed clone never shows up as a project. Then pick an existing
-branch or make a new one, and the project is on the main page. Its remote is
-`github`, not `origin`, because a GitHub `origin` stops Remote Control creating a
-session. Directories are named after the repo, so a second repo of the same name
+branch or make a new one, and the project is on the main page. Directories are named after the repo, so a second repo of the same name
 under another owner says *Cloned*.
 
-**New project** starts an empty git repository on `main`, and by default a private
-GitHub repo on the same account as its `github` remote. If the repo cannot be
+**New project** starts a git repository on `main` with an empty first commit, and by
+default a private GitHub repo on the same account as its `origin`, pushed. If the repo cannot be
 made, the project stays and its card says why.
 
 With `LAUNCHER_GITHUB_INVITES_FROM=<account>`, opening Clone also accepts that

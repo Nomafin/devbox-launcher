@@ -536,13 +536,14 @@ def create_app(base_dir_fn=None, ctx_fn=None, svc=_service, trust=_trust, disc=_
         except _projects.ProjectError as exc:
             return HTMLResponse(_ui.new_project_page(name=name, error=str(exc)))
         log.info("new-project: created %s", path)
-        if with_repo == "1":
-            try:
+        try:
+            _projects.first_commit(path, git_run)
+            if with_repo == "1":
                 gh.create_repo(name, path)
-            except _github.GithubError as exc:
-                # The project is made; the card says what is missing.
-                notes[_discovery.slugify(name)] = str(exc)
-                log.warning("new-project: %s: %s", name, exc)
+        except (_github.GithubError, _projects.ProjectError) as exc:
+            # The project is made; the card says what is missing.
+            notes[_discovery.slugify(name)] = str(exc)
+            log.warning("new-project: %s: %s", name, exc)
         return RedirectResponse("/", status_code=303)
 
     # --- running a command ------------------------------------------------

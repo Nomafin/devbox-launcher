@@ -1163,7 +1163,7 @@ _NEW_PROJECT = """<div class="card">
            autocomplete="off" spellcheck="false" required>
     <label class="check"><input type="checkbox" name="github" value="1" checked>
       Create a private GitHub repo for it</label>
-    <p class="hint">Starts an empty git repository on <code>main</code>.</p>
+    <p class="hint">Starts a git repository on <code>main</code> with an empty first commit.</p>
     <button class="btn" type="submit">Create</button>
   </form>
 </div>"""

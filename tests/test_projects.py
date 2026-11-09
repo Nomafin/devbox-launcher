@@ -6,7 +6,7 @@ import pytest
 from launcher.discovery import discover_projects
 from launcher.github import Repo
 from launcher.projects import (
-    CloneJobs, ProjectError, checkout, current_branch, default_run, init_project,
+    CloneJobs, ProjectError, checkout, current_branch, default_run, first_commit, init_project,
     remote_branches, valid_name,
 )
 
@@ -52,7 +52,7 @@ def test_invalid_names(name):
     assert not valid_name(name)
 
 
-def test_clone_lands_in_place_with_the_github_remote_and_can_be_listed(tmp_path):
+def test_clone_lands_in_place_with_origin_and_can_be_listed(tmp_path):
     source = make_source(tmp_path)
     base = tmp_path / "projects"
     base.mkdir()
@@ -60,7 +60,7 @@ def test_clone_lands_in_place_with_the_github_remote_and_can_be_listed(tmp_path)
     jobs.start(base, repo(str(source)))
     assert jobs.status("thing").state == "done"
     remotes = subprocess.run(["git", "remote"], cwd=base / "thing", capture_output=True, text=True)
-    assert remotes.stdout.split() == ["github"]
+    assert remotes.stdout.split() == ["origin"]
     assert [p.slug for p in discover_projects(base)] == ["thing"]
 
 
@@ -91,7 +91,7 @@ def test_clone_never_waits_for_a_password(tmp_path):
         return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="no")
     CloneJobs(run=run, spawn=now).start(tmp_path, repo("u"))
     assert seen["env"]["GIT_TERMINAL_PROMPT"] == "0"
-    assert seen["cmd"][:5] == ["git", "clone", "-o", "github", "--"]
+    assert seen["cmd"][:5] == ["git", "clone", "-o", "origin", "--"]
 
 
 def test_clone_that_raises_ends_failed_and_can_be_retried(tmp_path):
@@ -158,7 +158,7 @@ def test_remote_branches_of_any_remote_without_head(tmp_path):
 
 def test_remote_branches_keep_slashes(tmp_path):
     path = _cloned(tmp_path)
-    git("update-ref", "refs/remotes/github/feature/x", "HEAD", cwd=path)
+    git("update-ref", "refs/remotes/origin/feature/x", "HEAD", cwd=path)
     assert "feature/x" in remote_branches(path, default_run)
 
 
@@ -185,6 +185,23 @@ def test_init_project_is_an_empty_repo_on_main(tmp_path):
     path = init_project(tmp_path, "kokeilu", default_run)
     assert (path / ".git").is_dir() and current_branch(path, default_run) == "main"
     assert [p.slug for p in discover_projects(tmp_path)] == ["kokeilu"]
+
+
+def test_first_commit_lets_a_worktree_start(tmp_path):
+    def run(cmd, **kw):
+        return default_run(cmd, env={"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+                                     "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}, **kw)
+    path = init_project(tmp_path, "kokeilu", run)
+    first_commit(path, run)
+    assert subprocess.run(["git", "worktree", "add", "-b", "x", str(tmp_path / "wt")], cwd=path,
+                          capture_output=True).returncode == 0
+
+
+def test_first_commit_failure_says_why(tmp_path):
+    def run(cmd, **kw):
+        return subprocess.CompletedProcess(cmd, 128, stdout="", stderr="Please tell me who you are")
+    with pytest.raises(ProjectError, match="who you are"):
+        first_commit(tmp_path, run)
 
 
 def test_init_project_refusals(tmp_path):
