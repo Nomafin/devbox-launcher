@@ -8,7 +8,6 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 from . import authctl as _authctl
 from . import discovery as _discovery
-from . import gitremote as _gitremote
 from . import hostinfo as _hostinfo
 from . import runctl as _runctl
 from . import tmuxctl as _tmuxctl
@@ -23,10 +22,6 @@ from .config import base_dir as _base_dir
 from .config import run_user as _run_user
 
 log = logging.getLogger("launcher")
-
-# The documented fix for the origin gotcha, in the place it actually bites.
-_ORIGIN_WARNING = ("This repo's origin points at GitHub, which stops an agent "
-                   "creating a Remote Control session.")
 
 # `claude auth status` is a subprocess that talks to the network, and the page
 # polls several times a minute; a login does not lapse between one poll and
@@ -82,7 +77,7 @@ def _pop(marks: set, key) -> bool:
 
 
 def create_app(base_dir_fn=None, ctx_fn=None, svc=_service, trust=_trust, disc=_discovery,
-               auth=_authctl, git=_gitremote, host=_hostinfo, runner=_runctl,
+               auth=_authctl, host=_hostinfo, runner=_runctl,
                run_user=_FROM_ENV) -> FastAPI:
     resolve_base = base_dir_fn or _base_dir
     allowed_user = _run_user() if run_user is _FROM_ENV else run_user
@@ -160,13 +155,11 @@ def create_app(base_dir_fn=None, ctx_fn=None, svc=_service, trust=_trust, disc=_
             mission=v.mission, reason=notes.pop(a.key, None) or a.last_error,
             url=url, stale=_pop(stale, a.key), output=v.running or v.dead)
 
-    def project_html(place, blocked, run, listed: bool) -> str:
+    def project_html(place, run, listed: bool) -> str:
         label, tone = run_label(run)
         run_kw = {"run": label, "run_tone": tone} if allowed_user and listed else {}
-        note = notes.pop(place.slug, None)
         return _ui.project_row(slug=place.slug, name=place.name, ident=_home_relative(place.cwd),
-                               warning=note or (_ORIGIN_WARNING if blocked else None),
-                               fix_remote=note is None, **run_kw)
+                               warning=notes.pop(place.slug, None), **run_kw)
 
     def snapshot() -> dict:
         c = ctx()
@@ -192,10 +185,8 @@ def create_app(base_dir_fn=None, ctx_fn=None, svc=_service, trust=_trust, disc=_
         places.sort(key=lambda p: (not any(v.running for v in by_project[p.slug]),
                                    p.slug))
         for place in places:
-            blocked = git.blocks_remote_control(place.cwd)
             rows.append({"slug": place.slug,
-                         "html": project_html(place, blocked, runs.get(place.slug),
-                                              place.slug in listed)})
+                         "html": project_html(place, runs.get(place.slug), place.slug in listed)})
             for v in by_project[place.slug]:
                 rows.append({"slug": v.agent.key, "html": agent_html(c, v)})
         live = sum(1 for v in views if v.running)
@@ -312,26 +303,6 @@ def create_app(base_dir_fn=None, ctx_fn=None, svc=_service, trust=_trust, disc=_
     def api_pane(project: str, name: str):
         c = ctx()
         return {"lines": _runtime.tail(c.home, f"{project}{SEP}{name}", c.run)}
-
-    # The launcher's only write into a repo, so it is a route of its own rather
-    # than something Start does silently on your behalf.
-    @app.post("/fix-remote/{slug}")
-    def fix_remote(slug: str):
-        # place_of, not resolve: a nested repo's project row carries the
-        # warning too, and its rename must reach that repo.
-        project = place_of(ctx(), slug)
-        if project is not None:
-            error = git.rename_origin(project.cwd)
-            if error:
-                log.warning("fix-remote: %s: %s", slug, error)
-            else:
-                log.info("fix-remote: renamed origin to github in %s", project.cwd)
-        return RedirectResponse("/", status_code=303)
-
-    @app.post("/api/fix-remote/{slug}")
-    def api_fix_remote(slug: str):
-        fix_remote(slug)
-        return snapshot()
 
     @app.post("/login/start")
     def login_start():

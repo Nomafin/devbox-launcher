@@ -19,11 +19,6 @@ class Auth:
     def status(self): return True
 
 
-class Git:
-    def blocks_remote_control(self, cwd): return False
-    def rename_origin(self, cwd): return None
-
-
 @pytest.fixture
 def app_world(tmp_path):
     clock = {"t": 1_000_000.0}
@@ -36,7 +31,7 @@ def app_world(tmp_path):
     ctx = service.Ctx(root=home / ".config" / "agents", base_dir=base, home=home, run=tmux,
                       now=lambda: clock["t"], sleep=lambda s: None, trust=lambda p: None,
                       new_id=lambda: next(ids))
-    app = create_app(base_dir_fn=lambda: base, ctx_fn=lambda: ctx, auth=Auth(), git=Git(),
+    app = create_app(base_dir_fn=lambda: base, ctx_fn=lambda: ctx, auth=Auth(),
                      host=Host(), run_user=None)
     return types.SimpleNamespace(client=TestClient(app), ctx=ctx, tmux=tmux, repo=repo, clock=clock)
 
