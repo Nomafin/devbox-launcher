@@ -159,7 +159,10 @@ def answer_trust_prompt(home, name: str, run: Runner) -> None:
 
 
 def claude_command(agent: Agent, *, fresh: bool, seed: Path | None, extra=()) -> str:
-    parts = ["claude", "--remote-control", agent.display, "-n", agent.display]
+    # --no-chrome: on a machine with the Claude in Chrome extension, Claude can
+    # otherwise stop at a question before Remote Control connects, and nobody
+    # at a phone can answer it.
+    parts = ["claude", "--remote-control", agent.display, "-n", agent.display, "--no-chrome"]
     if fresh:
         parts += ["--session-id", agent.session_id]
         if seed is not None:
