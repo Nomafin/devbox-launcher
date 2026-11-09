@@ -8,9 +8,14 @@ hypervisor's, which is the number that constrains a Start.
 Disk earns its place beside memory because on a box that builds Docker images
 and node_modules into a 20 GB rootfs, filling the disk is likelier than filling
 the RAM.
+
+A Mac has no /proc: there the same two numbers come from vm_stat and sysconf.
 """
 
 import os
+import re
+import subprocess
+import sys
 from pathlib import Path
 
 MEMINFO = Path("/proc/meminfo")
@@ -33,6 +38,30 @@ def _fields(path: Path) -> dict[str, int]:
     return out
 
 
+def _default_run(cmd: list[str]) -> subprocess.CompletedProcess:
+    return subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+
+
+def _darwin_fields(run=_default_run) -> dict[str, int]:
+    """/proc/meminfo's two fields, in kB. Inactive and speculative pages count
+    as available, as they do in Linux's MemAvailable: the system takes them
+    back when something needs the room."""
+    try:
+        result = run(["/usr/bin/vm_stat"])
+        total = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES") // 1024
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return {}
+    if result.returncode != 0:
+        return {}
+    text = result.stdout or ""
+    size = re.search(r"page size of (\d+) bytes", text)
+    pages = dict(re.findall(r"^Pages (free|inactive|speculative):\s+(\d+)\.", text, re.M))
+    if not size or len(pages) != 3:
+        return {}
+    available = sum(int(n) for n in pages.values()) * int(size.group(1)) // 1024
+    return {"MemTotal": total, "MemAvailable": available}
+
+
 def _gb(kb: int) -> str:
     """`12` for a whole number, `7.2` otherwise: the total is a constant of the
     box, and a decimal on it only competes with the number that moves."""
@@ -40,13 +69,15 @@ def _gb(kb: int) -> str:
     return str(int(value)) if value == int(value) else str(value)
 
 
-def memory(path: Path = MEMINFO) -> str:
+def memory(path: Path | None = None) -> str:
     """"4.2 of 12 GB", or "" when it cannot be read.
 
     The header is decoration: a box that does not answer must not be the reason
     the page fails to render.
     """
-    fields = _fields(path)
+    fields = _fields(path or MEMINFO)
+    if not fields and path is None and sys.platform == "darwin":
+        fields = _darwin_fields()
     total, available = fields.get("MemTotal"), fields.get("MemAvailable")
     if not total or available is None:
         return ""
