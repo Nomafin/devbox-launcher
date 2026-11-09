@@ -8,7 +8,7 @@ a failed clone leaves nothing behind.
 
 Every name that comes from outside (repo slug, project name, branch) is
 validated before it reaches a path or a command. Subprocess calls are
-injected, as in `gitremote`, so the tests choose between real git and a fake.
+injected, so the tests choose between real git and a fake.
 """
 
 import os
@@ -190,6 +190,15 @@ def init_project(base_dir: Path, name: str, run: Runner) -> Path:
     if result.returncode != 0:
         raise ProjectError(f"git init failed: {_last_line(result.stderr or '')}")
     return path
+
+
+def first_commit(path: Path, run: Runner) -> None:
+    """An empty commit, so the project has something to branch from: an agent's
+    worktree cannot start in a repo with no commits, and a pull request needs a
+    base on the remote."""
+    result = run(["git", "commit", "--allow-empty", "-m", "Initial commit"], cwd=path)
+    if result.returncode != 0:
+        raise ProjectError(f"git could not make the first commit: {_last_line(result.stderr or '')}")
 
 
 def current_branch(path: Path, run: Runner) -> str:

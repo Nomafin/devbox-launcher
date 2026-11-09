@@ -16,8 +16,8 @@ from typing import Callable
 
 Runner = Callable[[list[str]], subprocess.CompletedProcess]
 
-# The remote a repo from here gets. Not `origin`: see gitremote.py.
-REMOTE = "github"
+# The remote a repo from here gets.
+REMOTE = "origin"
 
 _REPOS = ("user/repos?per_page=100&sort=pushed"
           "&affiliation=owner,collaborator,organization_member")
@@ -97,5 +97,5 @@ class Client:
         return accepted
 
     def create_repo(self, name: str, path: Path) -> None:
-        """A private repo on this box's account, as the `github` remote of `path`."""
-        self._gh("repo", "create", name, "--private", "--source", str(path), "--remote", REMOTE)
+        """A private repo on this box's account, as the `origin` of `path`, pushed."""
+        self._gh("repo", "create", name, "--private", "--source", str(path), "--remote", REMOTE, "--push")

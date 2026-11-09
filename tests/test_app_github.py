@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 
 from launcher.app import create_app
 from launcher.github import GithubError, Repo
-from launcher.projects import CloneStatus
+from launcher.projects import CloneStatus, default_run
 
 from agents.conftest import make_repo
 from test_app import FakeAuth, FakeGit, FakeHost, agents_ctx
@@ -67,12 +67,18 @@ def base_of(tmp_path):
     return base
 
 
-def client(tmp_path, on=True, gh=None, jobs=None, invites_from=None):
+def with_identity(cmd, **kw):
+    return default_run(cmd, env={"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+                                 "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}, **kw)
+
+
+def client(tmp_path, on=True, gh=None, jobs=None, invites_from=None, projects_run=with_identity):
     base = base_of(tmp_path)
     return TestClient(create_app(
         base_dir_fn=lambda: base, ctx_fn=agents_ctx(base), auth=FakeAuth(), git=FakeGit(),
         host=FakeHost(""), run_user=None, github_on=on, invites_from=invites_from,
-        gh=gh or FakeGithub(), jobs=jobs or FakeJobs()), follow_redirects=False)
+        gh=gh or FakeGithub(), jobs=jobs or FakeJobs(), projects_run=projects_run),
+        follow_redirects=False)
 
 
 def cloned(tmp_path, name="alpha"):
@@ -250,6 +256,22 @@ def test_new_project_with_repo(tmp_path):
     path = base_of(tmp_path) / "kokeilu"
     assert r.status_code == 303 and (path / ".git").is_dir()
     assert gh.created == [("kokeilu", path)]
+
+
+def test_new_project_has_a_first_commit_to_branch_from(tmp_path):
+    client(tmp_path).post("/new-project", data={"name": "kokeilu"})
+    assert git("log", "--format=%s", cwd=base_of(tmp_path) / "kokeilu") == "Initial commit"
+
+
+def test_without_a_first_commit_no_repo_is_made_and_the_card_says_why(tmp_path):
+    def no_identity(cmd, **kw):
+        if cmd[:2] == ["git", "commit"]:
+            return subprocess.CompletedProcess(cmd, 128, stdout="", stderr="who are you")
+        return with_identity(cmd, **kw)
+    gh = FakeGithub()
+    c = client(tmp_path, gh=gh, projects_run=no_identity)
+    c.post("/new-project", data={"name": "kokeilu", "github": "1"})
+    assert gh.created == [] and "who are you" in c.get("/").text
 
 
 def test_new_project_without_repo_stays_local(tmp_path):

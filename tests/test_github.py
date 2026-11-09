@@ -80,8 +80,8 @@ def test_accepts_only_the_owners_invitations_to_the_owners_repos():
     assert patches == [["gh", "api", "-X", "PATCH", "user/repository_invitations/1", "--silent"]]
 
 
-def test_create_repo_is_private_and_sets_the_github_remote(tmp_path):
+def test_create_repo_is_private_and_sets_origin(tmp_path):
     run = Gh()
     Client(run).create_repo("kokeilu", tmp_path)
     assert run.calls == [["gh", "repo", "create", "kokeilu", "--private", "--source",
-                          str(tmp_path), "--remote", "github"]]
+                          str(tmp_path), "--remote", "origin", "--push"]]
