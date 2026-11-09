@@ -20,12 +20,14 @@ from . import ui as _ui
 from .agents import places as _places
 from .agents import registry as _registry
 from .agents import runtime as _runtime
+from .agents import schedule as _schedule
 from .agents import service as _service
 from .agents.model import ARCHIVED, MAIN, PARKED, SCRATCH, SEP, AgentError
 from .config import base_dir as _base_dir
 from .config import github as _github_on
 from .config import github_invites_from as _invites_from
 from .config import run_user as _run_user
+from .config import schedules as _schedules_on
 
 log = logging.getLogger("launcher")
 
@@ -106,11 +108,12 @@ def _pop(marks: set, key) -> bool:
 def create_app(base_dir_fn=None, ctx_fn=None, svc=_service, trust=_trust, disc=_discovery,
                auth=_authctl, git=_gitremote, host=_hostinfo, runner=_runctl,
                run_user=_FROM_ENV, github_on=_FROM_ENV, invites_from=_FROM_ENV, gh=None,
-               jobs=None, projects_run=None) -> FastAPI:
+               jobs=None, projects_run=None, schedules_on=_FROM_ENV) -> FastAPI:
     resolve_base = base_dir_fn or _base_dir
     allowed_user = _run_user() if run_user is _FROM_ENV else run_user
     use_github = _github_on() if github_on is _FROM_ENV else github_on
     accept_from = _invites_from() if invites_from is _FROM_ENV else invites_from
+    use_schedules = _schedules_on() if schedules_on is _FROM_ENV else schedules_on
     gh = gh or _github.Client()
     git_run = projects_run or _projects.default_run
     clone_jobs = jobs or _projects.CloneJobs()
@@ -256,7 +259,7 @@ def create_app(base_dir_fn=None, ctx_fn=None, svc=_service, trust=_trust, disc=_
         return _ui.page(rows=_ui.nest(data["projects"]), count=data["count"],
                         usage=data["usage"], signed_in=data["signedIn"],
                         run=bool(allowed_user), parked=data["parked"],
-                        github=use_github)
+                        github=use_github, schedules=use_schedules)
 
     def place_of(c, slug):
         return _places.by_slug(c.base_dir, slug, _registry.load(c.root))
@@ -545,6 +548,64 @@ def create_app(base_dir_fn=None, ctx_fn=None, svc=_service, trust=_trust, disc=_
             notes[_discovery.slugify(name)] = str(exc)
             log.warning("new-project: %s: %s", name, exc)
         return RedirectResponse("/", status_code=303)
+
+    # --- schedules --------------------------------------------------------
+    def require_schedules() -> None:
+        if not use_schedules:
+            raise HTTPException(status_code=404)
+
+    def schedules_html(*, error: str | None = None, form: dict | None = None,
+                       result: str | None = None) -> str:
+        c = ctx()
+        try:
+            found = _schedule.load(c.root)
+        except AgentError as exc:
+            found, error = [], str(exc)
+        return _ui.schedules_page(
+            schedules=found, projects=[p.slug for p in disc.discover_projects(resolve_base())],
+            error=error, form=form, result=result)
+
+    @app.get("/schedules", response_class=HTMLResponse)
+    def schedules_get(edit: str = "") -> str:
+        require_schedules()
+        c = ctx()
+        current = next((s for s in _schedule.load(c.root) if s.key == edit), None)
+        if current is None:
+            return schedules_html()
+        project, _, name = current.key.partition(SEP)
+        return schedules_html(form={"project": project, "name": name,
+                                    "times": ", ".join(current.times), "prompt": current.prompt,
+                                    "mode": current.mode or "", "model": current.model or ""})
+
+    @app.post("/schedules")
+    def schedules_post(project: str = Form(""), name: str = Form(""), times: str = Form(""),
+                       prompt: str = Form(""), mode: str = Form(""), model: str = Form("")):
+        require_schedules()
+        form = {"project": project, "name": name, "times": times, "prompt": prompt,
+                "mode": mode, "model": model}
+        try:
+            _schedule.add(ctx(), f"{project}{SEP}{name.strip()}", times=times, prompt=prompt,
+                          mode=mode or None, model=model)
+        except AgentError as exc:
+            return HTMLResponse(schedules_html(error=str(exc), form=form))
+        return RedirectResponse("/schedules", status_code=303)
+
+    @app.post("/schedules/{project}/{name}/{action}")
+    def schedules_action(project: str, name: str, action: str):
+        require_schedules()
+        key, c = f"{project}{SEP}{name}", ctx()
+        try:
+            if action == "run":
+                return HTMLResponse(schedules_html(result=_schedule.run_now(c, key)))
+            if action == "delete":
+                _schedule.remove(c, key)
+            elif action in ("pause", "resume"):
+                _schedule.set_enabled(c, key, action == "resume")
+            else:
+                raise HTTPException(status_code=404)
+        except AgentError as exc:
+            return HTMLResponse(schedules_html(error=str(exc)))
+        return RedirectResponse("/schedules", status_code=303)
 
     # --- running a command ------------------------------------------------
     # A shell on the box, so it is gated twice. Tailscale Serve stamps every

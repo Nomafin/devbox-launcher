@@ -8,6 +8,7 @@ launchd agents in `~/Library/LaunchAgents`:
 | `devbox.launcher` | The web app | At login; restarted after a crash |
 | `devbox.agents-reap` | Parks idle agents, deletes idle scratch sessions | Every 30 minutes |
 | `devbox.agents-restore` | Starts the agents that were running | At login, not during an install |
+| `devbox.agents-schedule` | Starts scheduled runs; only with `LAUNCHER_SCHEDULES=1` | Every 5 minutes |
 
 Prerequisites, from Homebrew: `brew install python tmux`. Install Claude Code
 with its native installer, sign in once in Terminal, and run `./install.sh`.
@@ -68,6 +69,7 @@ few seconds, and `launcher.log` is where that shows.
 launchctl bootout "gui/$(id -u)/devbox.launcher"
 launchctl bootout "gui/$(id -u)/devbox.agents-reap"
 launchctl bootout "gui/$(id -u)/devbox.agents-restore" 2>/dev/null
+launchctl bootout "gui/$(id -u)/devbox.agents-schedule" 2>/dev/null
 rm ~/Library/LaunchAgents/devbox.*.plist
 ```
 

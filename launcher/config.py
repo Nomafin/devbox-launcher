@@ -23,3 +23,9 @@ def github_invites_from() -> str | None:
     """The account whose repo invitations the Clone page accepts. Unset means
     invitations are left for you to answer on GitHub."""
     return os.environ.get("LAUNCHER_GITHUB_INVITES_FROM") or None
+
+
+def schedules() -> bool:
+    """Whether the Schedules page is on. install.sh sets it along with the job
+    that runs the schedules, since one is no use without the other."""
+    return os.environ.get("LAUNCHER_SCHEDULES") == "1"

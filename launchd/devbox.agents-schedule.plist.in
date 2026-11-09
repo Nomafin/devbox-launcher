@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>devbox.agents-schedule</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>@VENV@/bin/agentctl</string>
+    <string>schedule</string>
+    <string>tick</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>LAUNCHER_BASE_DIR</key>
+    <string>@BASE_DIR@</string>
+    <key>PATH</key>
+    <string>@CLAUDE_BIN_DIR@:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>LANG</key>
+    <string>en_US.UTF-8</string>
+  </dict>
+  <!-- Every 5 minutes: start whatever schedule is due. -->
+  <key>StartInterval</key>
+  <integer>300</integer>
+  <!-- A run may start the agents' tmux server, and the agent must outlive this job. -->
+  <key>AbandonProcessGroup</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>@LOG_DIR@/agents-schedule.log</string>
+  <key>StandardErrorPath</key>
+  <string>@LOG_DIR@/agents-schedule.log</string>
+</dict>
+</plist>

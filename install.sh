@@ -23,6 +23,8 @@ RUN_USER="${LAUNCHER_RUN_USER:-}"
 GITHUB="${LAUNCHER_GITHUB:-}"
 # Whose repo invitations the Clone page accepts. Empty = none.
 GITHUB_INVITES_FROM="${LAUNCHER_GITHUB_INVITES_FROM:-}"
+# The Schedules page and the job that runs them (macOS for now). Empty = off.
+SCHEDULES="${LAUNCHER_SCHEDULES:-}"
 UNIT_DIR="$HOME/.config/systemd/user"
 UNIT="devbox-launcher.service"
 BIN_DIR="$HOME/.local/bin"
@@ -123,6 +125,7 @@ render() {
         -e "s|@CLAUDE_BIN_DIR@|$CLAUDE_BIN_DIR|g" \
         -e "s|@LOG_DIR@|${LOG_DIR:-}|g" \
         -e "s|@GITHUB@|$GITHUB|g" \
+        -e "s|@SCHEDULES@|$SCHEDULES|g" \
         -e "s|@GITHUB_INVITES_FROM@|$GITHUB_INVITES_FROM|g" \
         "$1" > "$2"
 }
@@ -192,6 +195,17 @@ install_launchd() {
     note "starting the launcher and the agents reaper"
     launchd_load "devbox.launcher"
     launchd_load "devbox.agents-reap"
+
+    local job="devbox.agents-schedule"
+    if [ -n "$SCHEDULES" ]; then
+        note "starting the schedules job"
+        render "$REPO_DIR/launchd/$job.plist.in" "$AGENT_DIR/$job.plist"
+        plutil -lint -s "$AGENT_DIR/$job.plist" || die "$job.plist is not a valid plist"
+        launchd_load "$job"
+    else
+        launchctl bootout "$LAUNCHD_DOMAIN/$job" 2>/dev/null || true
+        rm -f "$AGENT_DIR/$job.plist"
+    fi
 }
 
 macos_notes() {
@@ -217,6 +231,7 @@ case "$(uname -s)" in
         install_launchd
         ;;
     *)
+        [ -z "$SCHEDULES" ] || warn "LAUNCHER_SCHEDULES only works on macOS for now; ignoring it"
         LOG_HINT="journalctl --user -u $UNIT -n 50"
         install_systemd
         ;;

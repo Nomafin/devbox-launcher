@@ -26,6 +26,8 @@
     <string>@GITHUB@</string>
     <key>LAUNCHER_GITHUB_INVITES_FROM</key>
     <string>@GITHUB_INVITES_FROM@</string>
+    <key>LAUNCHER_SCHEDULES</key>
+    <string>@SCHEDULES@</string>
     <key>PATH</key>
     <string>@CLAUDE_BIN_DIR@:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
     <!-- launchd sets no locale, and agents print UTF-8. -->

@@ -344,6 +344,29 @@ account's invitations to its own repos, so a repo shared with the box a moment a
 is simply on the list. An invitation to anyone else's repo, an organization's
 included, is left alone whoever sent it.
 
+## Schedules
+
+macOS for now. With `LAUNCHER_SCHEDULES=1 ./install.sh` the main page gets a
+**Schedules** link, and a job checks every five minutes what is due. Off, there is
+no link and no job.
+
+A schedule is a project, an agent name, times of day and a prompt. At each time the
+agent starts a new conversation with that prompt, on a branch of its own
+(`agent/<name>`, in a worktree), and is told to push that branch and open a pull
+request, never to push to the default branch. That is an instruction to the agent,
+not something enforced: protect the branch on GitHub if it has to hold. The run is an
+ordinary agent, so you can watch it or take it over in the Claude app.
+
+A run does not interrupt: if a terminal is attached or the agent was active in the
+last ten minutes, that time is skipped and the page says so. A run more than an hour
+late waits for its next time. The prompt is limited to 8000 characters; point it at a
+file in the repo for more. A worktree has only what is in git, so a file like
+`.env.local` is not there.
+
+The same from a terminal: `agentctl schedule add <project>/<name> --at 06:00,18:00
+--prompt-file task.md [--mode auto] [--model sonnet]`, and `ls`, `run`, `pause`,
+`resume`, `rm`, `tick`.
+
 ## Documentation
 
 - [SECURITY.md](SECURITY.md) — threat model; read it first
