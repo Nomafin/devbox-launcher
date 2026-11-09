@@ -70,7 +70,7 @@ creates a detached tmux session `<project>/<name>` on socket
 workdir, running
 
 ```
-claude --remote-control <project>/<name> -n <project>/<name> \
+claude --remote-control <project>/<name> -n <project>/<name> --add-dir <briefs> \
        --resume <id> | --session-id <new id> --append-system-prompt-file <seed>
        [--permission-mode <mode>]
 ```

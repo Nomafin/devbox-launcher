@@ -1,5 +1,6 @@
 import os
 import shlex
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -387,3 +388,27 @@ def test_restore_clears_a_clean_exit_instead_of_reopening_it(world):
     assert service.restore(world.ctx) == ["cleared notes/main"]
     assert "notes/main" not in world.tmux.sessions
     assert registry.load(world.ctx.root)["notes/main"].state == STOPPED
+
+
+def test_named_and_main_agents_may_touch_their_brief_scratch_has_none(world):
+    service.start(world.ctx, world.place, "main")
+    args = world.tmux.argv("notes/main")
+    assert args[args.index("--add-dir") + 1].endswith("briefs/notes")
+    a = service.scratch(world.ctx, world.place)
+    assert "--add-dir" not in world.tmux.argv(a.display)
+
+
+def test_an_agents_worktree_stays_out_of_the_projects_git_status(world):
+    service.start(world.ctx, world.place, "drafts", create=True)
+    status = subprocess.run(["git", "status", "--porcelain"], cwd=world.repo,
+                            capture_output=True, text=True).stdout
+    assert status == ""
+
+
+def test_an_existing_worktree_is_excluded_on_its_next_start(world):
+    service.start(world.ctx, world.place, "drafts", create=True)
+    service.stop(world.ctx, world.place, "drafts")
+    exclude = world.repo / ".git" / "info" / "exclude"
+    exclude.write_text("# mine\n")
+    service.start(world.ctx, world.place, "drafts")
+    assert exclude.read_text() == "# mine\n/.claude/worktrees/\n"
