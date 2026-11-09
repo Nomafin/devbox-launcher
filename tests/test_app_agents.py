@@ -190,7 +190,7 @@ def test_agent_that_never_connects_says_why(app_world):
     app_world.tmux.on_start = lambda s: s.update(pane="Welcome to Claude Code")
     app_world.client.post("/api/agents/notes/main/start")
     app_world.clock["t"] += 31
-    assert "Remote Control has not connected" in rows(app_world)["notes/main"]
+    assert "Remote Control has not shown as connected" in rows(app_world)["notes/main"]
     blocked = ("❯ /remote-control\n  ⎿  Remote Control is disabled by your organization's "
                "policy. Contact your")
     app_world.tmux.sessions["notes/main"]["screen"] = blocked

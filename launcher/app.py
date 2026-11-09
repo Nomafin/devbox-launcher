@@ -81,8 +81,10 @@ _FROM_ENV = object()
 
 # A session that runs but never connects. The usual cause is the claude.ai
 # organization's policy, which Claude Code does not mention at start.
-_NOT_CONNECTED = ("Remote Control has not connected. If your Claude organization has "
-                  "turned Remote Control off, an admin must allow it.")
+# Read off the screen, so an agent that is connected but has a prompt or a
+# long answer covering the status line reads the same: hence "Screen now".
+_NOT_CONNECTED = ("Remote Control has not shown as connected. Screen now shows whether "
+                  "the agent is waiting for an answer.")
 _AGENT_STATES = {"connected": "Live", "starting": "Starting…", "ready": "Not connected",
                  "failed": "Start failed", "stopped": "", "broken": "Worktree missing"}
 
