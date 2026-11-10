@@ -215,9 +215,15 @@ def _start(ctx: Ctx, agents: dict, agent: Agent, *, fresh: bool, force: bool,
             seed = briefs.write_seed(ctx.root, agent)
     ctx.trust(agent.workdir)
     env = {"AGENT_NAME": agent.key}
+    brief_dir = None
     if agent.kind == AGENT:
-        env["AGENT_BRIEF"] = str(briefs.ensure(ctx.root, agent))
-    command = runtime.claude_command(agent, fresh=not resume, seed=seed, extra=extra)
+        brief = briefs.ensure(ctx.root, agent)
+        env["AGENT_BRIEF"] = str(brief)
+        brief_dir = brief.parent
+    if agent.has_worktree:
+        worktrees.exclude(agent.cwd, run=ctx.git)
+    command = runtime.claude_command(agent, fresh=not resume, seed=seed, extra=extra,
+                                     brief_dir=brief_dir)
     try:
         runtime.start(ctx.home, agent.display, agent.workdir, command, env, ctx.run)
         why = _settle(ctx, agent)
