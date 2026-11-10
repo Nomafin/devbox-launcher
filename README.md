@@ -114,6 +114,8 @@ All optional, read from the environment by the systemd units:
 | `LAUNCHER_PORT` | `8765` | Bind port |
 | `LAUNCHER_VENV` | `~/.local/share/devbox-launcher/venv` | Install location (install-time only) |
 | `LAUNCHER_RUN_USER` | *(empty)* | Tailnet login allowed to use **Run command**; empty hides the feature — see below |
+| `LAUNCHER_GITHUB` | *(empty)* | `1` turns on the **Clone** and **New project** pages — see below |
+| `LAUNCHER_GITHUB_INVITES_FROM` | *(empty)* | GitHub account whose repo invitations the Clone page accepts; empty leaves invitations alone |
 | `AGENTS_HOME` | `~/.config/agents` | Agent registry and briefs (rarely worth changing) |
 
 ## How projects are discovered
@@ -318,6 +320,31 @@ POSTs must be same-origin. Read the *Run command* section of
 sessions to hand you commands rather than call the endpoint themselves; a
 ready-made `CLAUDE.md` block (which also tells agents about their briefs) is in
 [docs/claude-md-snippet.md](docs/claude-md-snippet.md).
+
+## GitHub: clone and new projects
+
+Off by default. With `LAUNCHER_GITHUB=1 ./install.sh` the main page gets **Clone**
+and **New project** links; without it they are not there and the pages answer
+404. They use the box's `gh` login, so the launcher stores no token. A clone goes
+the way `gh` is set to talk to git: over SSH with the box's key when
+`gh config get git_protocol` says `ssh`, otherwise over HTTPS, which needs
+`gh auth setup-git` once for private repos.
+
+**Clone** lists what that account can reach, most recently pushed first, with a
+search box. A repo is cloned in the background into
+`<LAUNCHER_BASE_DIR>/.cloning/<name>` and moved into place only when complete, so
+a half-done or failed clone never shows up as a project. Then pick an existing
+branch or make a new one, and the project is on the main page. Directories are named after the repo, so a second repo of the same name
+under another owner says *Cloned*.
+
+**New project** starts a git repository on `main` with an empty first commit, and by
+default a private GitHub repo on the same account as its `origin`, pushed. If the repo cannot be
+made, the project stays and its card says why.
+
+With `LAUNCHER_GITHUB_INVITES_FROM=<account>`, opening Clone also accepts that
+account's invitations to its own repos, so a repo shared with the box a moment ago
+is simply on the list. An invitation to anyone else's repo, an organization's
+included, is left alone whoever sent it.
 
 ## Documentation
 

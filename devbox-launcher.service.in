@@ -15,6 +15,9 @@ Environment=LAUNCHER_HOST=@HOST@
 Environment=LAUNCHER_PORT=@PORT@
 # Who may use "Run command" (matched against Tailscale-User-Login). Empty = off.
 Environment=LAUNCHER_RUN_USER=@RUN_USER@
+# The Clone and New project pages, and whose repo invitations they accept.
+Environment=LAUNCHER_GITHUB=@GITHUB@
+Environment=LAUNCHER_GITHUB_INVITES_FROM=@GITHUB_INVITES_FROM@
 Environment=PATH=@CLAUDE_BIN_DIR@:/usr/local/bin:/usr/bin:/bin
 Restart=on-failure
 RestartSec=5

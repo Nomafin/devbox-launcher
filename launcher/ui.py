@@ -326,6 +326,19 @@ body.show-parked .agents:has(.row.agent) { display: block; }
   .adetail { padding-left: .75rem; }
 }
 
+
+/* The Clone and New project pages and the header links that lead to them. */
+.links { display: flex; flex-wrap: wrap; gap: .25rem 1.25rem; margin: -.5rem 0 1.25rem;
+         font-size: .875rem; }
+.links a { color: var(--ink-dim); text-decoration: none; }
+.card + .card, .card + .row, .row + .card { margin-top: .75rem; }
+.card form + form, .card form + p { margin-top: .75rem; }
+.check { display: flex; align-items: center; gap: .5rem; margin-bottom: .75rem;
+         color: var(--ink); font-size: .9375rem; }
+.check input { width: auto; min-height: 0; margin: 0; }
+.search { display: flex; gap: .5rem; margin-bottom: .75rem; }
+.search input { margin: 0; min-width: 0; }
+.search .btn { flex: none; }
 """
 
 # Progressive enhancement: every control is a real form that works without
@@ -655,7 +668,7 @@ _PAGE = """<!doctype html>
   <h1>devbox sessions</h1>
   <span class="count" id="count">{count}</span>{parked}
 </header>
-<p class="usage" id="usage">{usage}</p>
+<p class="usage" id="usage">{usage}</p>{links}
 {banner}
 <div id="list">{rows}</div>
 <p class="hint">A running agent appears in the Claude app as
@@ -962,8 +975,9 @@ def _permission_agent(path: str, current: str | None, running: bool) -> str:
                         note=_MODE_RESTART_NOTE if running else _MODE_NOTE)
 
 def page(*, rows: list[str], count: str, usage: str = "", signed_in: bool,
-         run: bool = False, parked: int = 0) -> str:
+         run: bool = False, parked: int = 0, github: bool = False) -> str:
     return _PAGE.format(css=_CSS, js=(_RUN_JS + _JS) if run else _JS,
+                        links=_LINKS if github else "",
                         runbox=_RUNBOX if run else "",
                         count=escape(count), usage=escape(usage),
                         parked=_PARKED_TOGGLE.format(n=parked, hidden="" if parked else "hidden"),
@@ -1041,6 +1055,154 @@ def login_done() -> str:
 def login_error(error: str) -> str:
     return _LOGIN_ERROR.format(error=escape(error))
 
+
+
+# --- GitHub: clone, new project ------------------------------------------------
+# Plain forms in the sign-in page's frame: these are visited, not polled, so
+# they need none of the main page's script. A running clone is the one page
+# that changes on its own, and a meta refresh covers it.
+
+_LINKS = """
+<nav class="links"><a href="/clone">Clone</a><a href="/new-project">New project</a></nav>"""
+
+_SUB_PAGE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">{refresh}
+<title>devbox · {title}</title>
+<style>{css}</style>
+</head>
+<body>
+<div class="wrap">
+<header><h1>{title}</h1></header>
+{body}
+<a class="back" href="/">Back to sessions</a>
+</div>
+</body>
+</html>
+"""
+
+_REFRESH = '\n<meta http-equiv="refresh" content="2">'
+
+_ERR = '<div class="card"><p class="err">{text}</p></div>'
+
+_ACCEPTED = '<div class="card"><p class="hint">Invitations accepted: {repos}</p></div>'
+
+_CLONE_SEARCH = """<form class="search" method="get" action="/clone">
+  <input name="q" value="{query}" placeholder="search repositories" autocapitalize="off"
+         autocomplete="off" spellcheck="false">
+  <button class="btn" type="submit">Search</button>
+</form>"""
+
+_REPO_ROW = """<div class="row">
+  <div class="head">
+    <div class="name">{name}</div>{action}
+  </div>
+  <div class="meta"><span class="age">{date}</span></div>{description}
+</div>"""
+
+_REPO_CLONE = """
+    <form class="act" method="post" action="/clone">
+      <input type="hidden" name="repo" value="{name}">
+      <button class="btn" type="submit">Clone</button>
+    </form>"""
+
+_CLONE_RUNNING = """<div class="card">
+  <p>Cloning <code>{slug}</code>…</p>
+  <p class="hint">This page refreshes by itself.</p>
+</div>"""
+
+_CLONE_FAILED = """<div class="card">
+  <p class="err">{error}</p>
+  <a class="btn" href="/clone">Back to repositories</a>
+</div>"""
+
+_CLONE_UNKNOWN = """<div class="card">
+  <p>No clone of <code>{slug}</code> is in progress.</p>
+  <a class="btn" href="/clone">Clone a repository</a>
+</div>"""
+
+_CLONE_DONE = """<div class="card">
+  {error}<p>Cloned.{on} Pick the branch to work on.</p>{existing}
+  <form method="post" action="/clone/{slug}/branch">
+    <label for="new-branch">New branch</label>
+    <input id="new-branch" name="branch" autocapitalize="off"
+           autocomplete="off" spellcheck="false" required>
+    <input type="hidden" name="new" value="1">
+    <button class="btn" type="submit">Create branch</button>
+  </form>
+</div>"""
+
+_CLONE_EXISTING = """
+  <form method="post" action="/clone/{slug}/branch">
+    <label for="branch">Existing branch</label>
+    <select id="branch" name="branch">{options}</select>
+    <input type="hidden" name="new" value="">
+    <button class="btn" type="submit">Switch</button>
+  </form>"""
+
+_NEW_PROJECT = """<div class="card">
+  <form method="post" action="/new-project">
+    <label for="name">Name</label>
+    <input id="name" name="name" value="{name}" placeholder="e.g. kokeilu" autocapitalize="off"
+           autocomplete="off" spellcheck="false" required>
+    <label class="check"><input type="checkbox" name="github" value="1" checked>
+      Create a private GitHub repo for it</label>
+    <p class="hint">Starts a git repository on <code>main</code> with an empty first commit.</p>
+    <button class="btn" type="submit">Create</button>
+  </form>
+</div>"""
+
+
+def _sub_page(title: str, body: str, refresh: bool = False) -> str:
+    return _SUB_PAGE.format(css=_CSS, title=escape(title), body=body,
+                            refresh=_REFRESH if refresh else "")
+
+
+def _err(text: str | None) -> str:
+    return _ERR.format(text=escape(text)) if text else ""
+
+
+def clone_list_page(*, query: str, repos: list[dict], error: str | None = None,
+                    accepted: list[str] = ()) -> str:
+    """`repos`: dicts of slug, name, description, date and cloned."""
+    rows = "".join(_REPO_ROW.format(
+        name=escape(r["name"]), date=escape(r["date"]),
+        action=f'\n    <a class="state" href="/clone/{escape(r["slug"])}">Cloned</a>' if r["cloned"]
+        else _REPO_CLONE.format(name=escape(r["name"])),
+        description=_MISSION.format(text=escape(r["description"])) if r["description"] else "")
+        for r in repos)
+    if not rows and not error:
+        rows = '<div class="empty">No repositories found.</div>'
+    done = _ACCEPTED.format(repos=escape(", ".join(accepted))) if accepted else ""
+    return _sub_page("Clone", _CLONE_SEARCH.format(query=escape(query)) + _err(error) + done + rows)
+
+
+def clone_status_page(*, slug: str, state: str, error: str | None = None,
+                      branches: list[str] = (), current: str = "") -> str:
+    """`state`: running, done, failed, or unknown (no such clone). `current`,
+    the checked-out branch, is the one the picker starts on."""
+    if state == "running":
+        return _sub_page("Cloning", _CLONE_RUNNING.format(slug=escape(slug)), refresh=True)
+    if state == "failed":
+        return _sub_page("Clone failed", _CLONE_FAILED.format(error=escape(error or "")))
+    if state == "unknown":
+        return _sub_page("Clone", _CLONE_UNKNOWN.format(slug=escape(slug)))
+    # A branch made here may not be on the remote yet; it is still where we are.
+    names = list(branches) if not current or current in branches else [current, *branches]
+    options = "".join(f'<option value="{escape(b)}"{" selected" if b == current else ""}>'
+                      f'{escape(b)}</option>' for b in names)
+    existing = _CLONE_EXISTING.format(slug=escape(slug), options=options) if names else ""
+    return _sub_page(slug, _CLONE_DONE.format(
+        slug=escape(slug), existing=existing,
+        on=f" On <code>{escape(current)}</code>." if current else "",
+        error=f'<p class="err">{escape(error)}</p>' if error else ""))
+
+
+def new_project_page(*, name: str = "", error: str | None = None) -> str:
+    return _sub_page("New project", _err(error) + _NEW_PROJECT.format(name=escape(name)))
 
 
 _RUNBOX = """<dialog id="runbox" class="runbox" aria-labelledby="runbox-title">

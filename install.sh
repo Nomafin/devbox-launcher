@@ -19,6 +19,10 @@ HOST="${LAUNCHER_HOST:-127.0.0.1}"
 PORT="${LAUNCHER_PORT:-8765}"
 # Tailnet login allowed to use "Run command" (a shell on the box). Empty = off.
 RUN_USER="${LAUNCHER_RUN_USER:-}"
+# The Clone and New project pages, through the `gh` login. Empty = off.
+GITHUB="${LAUNCHER_GITHUB:-}"
+# Whose repo invitations the Clone page accepts. Empty = none.
+GITHUB_INVITES_FROM="${LAUNCHER_GITHUB_INVITES_FROM:-}"
 UNIT_DIR="$HOME/.config/systemd/user"
 UNIT="devbox-launcher.service"
 BIN_DIR="$HOME/.local/bin"
@@ -118,6 +122,8 @@ render() {
         -e "s|@RUN_USER@|$RUN_USER|g" \
         -e "s|@CLAUDE_BIN_DIR@|$CLAUDE_BIN_DIR|g" \
         -e "s|@LOG_DIR@|${LOG_DIR:-}|g" \
+        -e "s|@GITHUB@|$GITHUB|g" \
+        -e "s|@GITHUB_INVITES_FROM@|$GITHUB_INVITES_FROM|g" \
         "$1" > "$2"
 }
 
