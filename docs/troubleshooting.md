@@ -234,14 +234,6 @@ same goes for `agents-restore.service`, which also sets `RemainAfterExit=yes`.
 If you wrote your own units, carry those settings over. (A *reboot* does clear
 agents; restore brings back the ones that were running.)
 
-## Legacy: the GitHub `origin` note
-
-Projects whose `origin` points at GitHub carry an amber note and a **Rename
-origin → github** button. That was a workaround for the old `claude
-remote-control` listeners, whose session creation failed a GitHub
-repo-access check. Agents are interactive `--remote-control` sessions and are
-not affected; the button is harmless and can be ignored.
-
 ## Never hot-patch a single module
 
 Copying one module onto the box is what caused a real outage: a `tmuxctl.py` from

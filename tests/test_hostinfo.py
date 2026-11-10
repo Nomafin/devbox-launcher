@@ -1,3 +1,7 @@
+import subprocess
+
+import pytest
+
 from launcher import hostinfo
 
 
@@ -44,6 +48,55 @@ def test_a_meminfo_without_the_fields_reports_nothing(tmp_path):
     path = tmp_path / "meminfo"
     path.write_text("Something: 1 kB\n")
     assert hostinfo.memory(path) == ""
+
+
+VM_STAT = """Mach Virtual Memory Statistics: (page size of 16384 bytes)
+Pages free:                                    1000.
+Pages active:                                  5000.
+Pages inactive:                                2000.
+Pages speculative:                              500.
+Pages wired down:                              3000.
+"""
+
+
+def _vm_stat(stdout=VM_STAT, returncode=0):
+    def run(cmd):
+        assert cmd == ["/usr/bin/vm_stat"]
+        return subprocess.CompletedProcess(cmd, returncode, stdout=stdout, stderr="")
+    return run
+
+
+def test_darwin_fields_count_free_inactive_and_speculative_as_available(monkeypatch):
+    monkeypatch.setattr(hostinfo.os, "sysconf", lambda _n: 1024 if _n == "SC_PAGE_SIZE" else 16 * 1024 * 1024)
+    fields = hostinfo._darwin_fields(_vm_stat())
+    assert fields["MemAvailable"] == 3500 * 16
+    assert fields["MemTotal"] == 16 * 1024 * 1024
+
+
+@pytest.mark.parametrize("run", [_vm_stat(returncode=1), _vm_stat(stdout="nonsense\n")])
+def test_darwin_fields_that_cannot_be_read_are_empty(run):
+    assert hostinfo._darwin_fields(run) == {}
+
+
+def test_a_vm_stat_that_cannot_run_is_empty():
+    def boom(_cmd):
+        raise OSError("nope")
+    assert hostinfo._darwin_fields(boom) == {}
+
+
+def test_memory_on_a_mac_comes_from_vm_stat(monkeypatch, tmp_path):
+    monkeypatch.setattr(hostinfo.sys, "platform", "darwin")
+    monkeypatch.setattr(hostinfo, "MEMINFO", tmp_path / "nope")
+    monkeypatch.setattr(hostinfo, "_darwin_fields",
+                        lambda: {"MemTotal": 12 * 1024 * 1024, "MemAvailable": 8 * 1024 * 1024})
+    assert hostinfo.memory() == "4.0 of 12 GB"
+
+
+def test_memory_elsewhere_never_asks_vm_stat(monkeypatch, tmp_path):
+    monkeypatch.setattr(hostinfo.sys, "platform", "linux")
+    monkeypatch.setattr(hostinfo, "MEMINFO", tmp_path / "nope")
+    monkeypatch.setattr(hostinfo, "_darwin_fields", lambda: pytest.fail("asked vm_stat"))
+    assert hostinfo.memory() == ""
 
 
 class FakeStatvfs:

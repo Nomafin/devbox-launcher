@@ -25,7 +25,8 @@ class Gh:
 def _repo(name, owner="Hooace", description="desc"):
     return json.dumps({"name": name, "full_name": f"{owner}/{name}", "description": description,
                        "pushed_at": "2026-10-20T08:00:00Z",
-                       "clone_url": f"https://github.com/{owner}/{name}.git"})
+                       "clone_url": f"https://github.com/{owner}/{name}.git",
+                       "ssh_url": f"git@github.com:{owner}/{name}.git"})
 
 
 def test_repos_reads_one_json_object_per_line():
@@ -40,7 +41,7 @@ def test_repos_reads_one_json_object_per_line():
 def test_repos_asks_for_everything_the_account_can_reach_and_skips_archived():
     run = Gh()
     Client(run).repos()
-    joined = " ".join(run.calls[0])
+    joined = " ".join(run.calls[-1])
     assert "affiliation=owner,collaborator,organization_member" in joined
     assert "select(.archived | not)" in joined and "--paginate" in joined
 
@@ -85,3 +86,14 @@ def test_create_repo_is_private_and_sets_origin(tmp_path):
     Client(run).create_repo("kokeilu", tmp_path)
     assert run.calls == [["gh", "repo", "create", "kokeilu", "--private", "--source",
                           str(tmp_path), "--remote", "origin", "--push"]]
+
+
+def test_repos_clone_over_ssh_when_gh_uses_ssh():
+    run = Gh(git_protocol=(0, "ssh\n", ""), user=(0, _repo("alpha") + "\n", ""))
+    assert Client(run).repos()[0].clone_url == "git@github.com:Hooace/alpha.git"
+
+
+@pytest.mark.parametrize("answer", [(0, "https\n", ""), (1, "", "unknown key")])
+def test_repos_clone_over_https_otherwise(answer):
+    run = Gh(git_protocol=answer, user=(0, _repo("alpha") + "\n", ""))
+    assert Client(run).repos()[0].clone_url == "https://github.com/Hooace/alpha.git"

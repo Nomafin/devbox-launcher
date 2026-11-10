@@ -47,8 +47,9 @@ Claude CLI and lets the real UI and agent code draw the page.</sub>
 
 ## Requirements
 
-- Linux with **systemd** (user services + lingering). Developed on Ubuntu 24.04
-  in an LXC container.
+- Linux with **systemd** (user services + lingering), developed on Ubuntu 24.04
+  in an LXC container; or **macOS** with launchd — see
+  [docs/macos.md](docs/macos.md).
 - **Python 3.12+** with `venv`
 - **tmux** — the process supervisor for agents
 - **git**
@@ -70,6 +71,8 @@ Run it as the user whose agents you want to manage — not as root. It:
 - links `agentctl` into `~/.local/bin`;
 - installs the agents' tmux config (`~/.config/agents/tmux.conf`) and the
   `/handoff` command (`~/.claude/commands/handoff.md`);
+- on a Mac, writes the launchd agents described in
+  [docs/macos.md](docs/macos.md) instead of the next two steps;
 - writes three systemd `--user` units: the web app, `agents-reap.timer`
   (enabled and started), and `agents-restore.service` (enabled, so it runs at
   boot — never started by the install, which would start every agent that was
@@ -322,8 +325,10 @@ ready-made `CLAUDE.md` block (which also tells agents about their briefs) is in
 
 Off by default. With `LAUNCHER_GITHUB=1 ./install.sh` the main page gets **Clone**
 and **New project** links; without it they are not there and the pages answer
-404. They use the box's `gh` login (`gh auth login`, then `gh auth setup-git`), so
-the launcher stores no token.
+404. They use the box's `gh` login, so the launcher stores no token. A clone goes
+the way `gh` is set to talk to git: over SSH with the box's key when
+`gh config get git_protocol` says `ssh`, otherwise over HTTPS, which needs
+`gh auth setup-git` once for private repos.
 
 **Clone** lists what that account can reach, most recently pushed first, with a
 search box. A repo is cloned in the background into
@@ -359,8 +364,9 @@ included, is left alone whoever sent it.
   Proxmox. The install script should be portable to any systemd Linux, but
   yours may well be the second machine it has ever touched. Bug reports
   welcome.
-- **Linux only.** `hostinfo.py` reads `/proc/meminfo` (and is lxcfs-aware so it
-  reports a container's limit rather than the host's).
+- **On Linux,** `hostinfo.py` reads `/proc/meminfo` (and is lxcfs-aware so it
+  reports a container's limit rather than the host's). A Mac must stay logged in
+  for the launcher to run; see [docs/macos.md](docs/macos.md).
 - **No multi-user support.** One launcher, one Unix user, one Claude account.
   `LAUNCHER_RUN_USER` names one person, not a list.
 

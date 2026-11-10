@@ -19,11 +19,6 @@ class Auth:
     def status(self): return True
 
 
-class Git:
-    def blocks_remote_control(self, cwd): return False
-    def rename_origin(self, cwd): return None
-
-
 @pytest.fixture
 def app_world(tmp_path):
     clock = {"t": 1_000_000.0}
@@ -36,7 +31,7 @@ def app_world(tmp_path):
     ctx = service.Ctx(root=home / ".config" / "agents", base_dir=base, home=home, run=tmux,
                       now=lambda: clock["t"], sleep=lambda s: None, trust=lambda p: None,
                       new_id=lambda: next(ids))
-    app = create_app(base_dir_fn=lambda: base, ctx_fn=lambda: ctx, auth=Auth(), git=Git(),
+    app = create_app(base_dir_fn=lambda: base, ctx_fn=lambda: ctx, auth=Auth(),
                      host=Host(), run_user=None)
     return types.SimpleNamespace(client=TestClient(app), ctx=ctx, tmux=tmux, repo=repo, clock=clock)
 
@@ -178,6 +173,27 @@ def test_crash_row_is_red_with_exit_code_and_output(app_world):
     assert lines == ["Error: API went away"]
 
 
+# --- writes come from this page ----------------------------------------------
+
+@pytest.mark.parametrize("headers", [{"Sec-Fetch-Site": "cross-site"},
+                                     {"Origin": "https://evil.example"}])
+def test_write_from_another_site_is_refused(app_world, headers):
+    r = app_world.client.post("/api/agents/notes/main/start", headers=headers)
+    assert r.status_code == 403
+    assert "notes/main" not in app_world.tmux.sessions
+
+
+@pytest.mark.parametrize("headers", [{"Sec-Fetch-Site": "same-origin"}, {}])
+def test_write_from_this_page_or_a_terminal_is_allowed(app_world, headers):
+    r = app_world.client.post("/api/agents/notes/main/start", headers=headers)
+    assert r.status_code == 200
+    assert "notes/main" in app_world.tmux.sessions
+
+
+def test_reading_from_another_site_is_not_refused(app_world):
+    assert app_world.client.get("/", headers={"Sec-Fetch-Site": "cross-site"}).status_code == 200
+
+
 def test_running_agent_offers_its_terminal_command(app_world):
     assert "data-terminal" not in rows(app_world)["notes/main"]
     app_world.client.post("/api/agents/notes/main/start")
@@ -225,24 +241,3 @@ def test_page_draws_agents_inside_their_project_card(app_world):
     agent = html.index('data-slug="notes/main"')
     foot = html.index('class="pfoot"', card)
     assert card < html.index('class="alist"', card) < agent < foot
-
-
-# --- writes come from this page ----------------------------------------------
-
-@pytest.mark.parametrize("headers", [{"Sec-Fetch-Site": "cross-site"},
-                                     {"Origin": "https://evil.example"}])
-def test_write_from_another_site_is_refused(app_world, headers):
-    r = app_world.client.post("/api/agents/notes/main/start", headers=headers)
-    assert r.status_code == 403
-    assert "notes/main" not in app_world.tmux.sessions
-
-
-@pytest.mark.parametrize("headers", [{"Sec-Fetch-Site": "same-origin"}, {}])
-def test_write_from_this_page_or_a_terminal_is_allowed(app_world, headers):
-    r = app_world.client.post("/api/agents/notes/main/start", headers=headers)
-    assert r.status_code == 200
-    assert "notes/main" in app_world.tmux.sessions
-
-
-def test_reading_from_another_site_is_not_refused(app_world):
-    assert app_world.client.get("/", headers={"Sec-Fetch-Site": "cross-site"}).status_code == 200

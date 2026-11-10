@@ -11,7 +11,7 @@ from launcher.github import GithubError, Repo
 from launcher.projects import CloneStatus, default_run
 
 from agents.conftest import make_repo
-from test_app import FakeAuth, FakeGit, FakeHost, agents_ctx
+from test_app import FakeAuth, FakeHost, agents_ctx
 
 ALPHA = Repo("alpha", "Hooace/alpha", "The first one", "2026-10-20T08:00:00Z",
              "https://github.com/Hooace/alpha.git")
@@ -75,7 +75,7 @@ def with_identity(cmd, **kw):
 def client(tmp_path, on=True, gh=None, jobs=None, invites_from=None, projects_run=with_identity):
     base = base_of(tmp_path)
     return TestClient(create_app(
-        base_dir_fn=lambda: base, ctx_fn=agents_ctx(base), auth=FakeAuth(), git=FakeGit(),
+        base_dir_fn=lambda: base, ctx_fn=agents_ctx(base), auth=FakeAuth(),
         host=FakeHost(""), run_user=None, github_on=on, invites_from=invites_from,
         gh=gh or FakeGithub(), jobs=jobs or FakeJobs(), projects_run=projects_run),
         follow_redirects=False)

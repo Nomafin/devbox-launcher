@@ -30,6 +30,9 @@ CLONING_DIR = ".cloning"
 
 _LOGIN_MARKERS = ("could not read Username", "Authentication failed", "terminal prompts disabled")
 _LOGIN_MESSAGE = "git could not log in to GitHub. On the box, run: gh auth setup-git"
+_SSH_LOGIN_MARKERS = ("Permission denied (publickey)", "Host key verification failed")
+_SSH_LOGIN_MESSAGE = ("git could not log in to GitHub over SSH. On the box, check that "
+                      "ssh -T git@github.com works.")
 
 _NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,99}")
 
@@ -75,6 +78,8 @@ def _clone_error(result: subprocess.CompletedProcess) -> str:
     stderr = result.stderr or ""
     if any(marker in stderr for marker in _LOGIN_MARKERS):
         return _LOGIN_MESSAGE
+    if any(marker in stderr for marker in _SSH_LOGIN_MARKERS):
+        return _SSH_LOGIN_MESSAGE
     last = _last_line(stderr)
     return f"Clone failed: {last}" if last else f"Clone failed (exit {result.returncode})."
 

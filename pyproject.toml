@@ -12,6 +12,7 @@ classifiers = [
     "Environment :: Web Environment",
     "Framework :: FastAPI",
     "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
     "Programming Language :: Python :: 3.12",
 ]
 dependencies = ["fastapi", "uvicorn", "python-multipart"]
