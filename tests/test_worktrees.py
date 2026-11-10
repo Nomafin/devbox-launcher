@@ -281,3 +281,18 @@ def test_create_on_named_branch(tmp_path):
     head = subprocess.run(["git", "-C", str(worktrees.path(repo, "drafts")), "rev-parse",
                            "--abbrev-ref", "HEAD"], capture_output=True, text=True).stdout.strip()
     assert head == "agent/drafts"
+
+
+def test_exclude_is_added_once_and_keeps_what_is_there(tmp_path):
+    repo = tmp_path / "r"
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    target = repo / ".git" / "info" / "exclude"
+    target.write_text("mine")
+    worktrees.exclude(repo)
+    worktrees.exclude(repo)
+    assert target.read_text() == "mine\n/.claude/worktrees/\n"
+
+
+def test_exclude_outside_a_repo_does_nothing(tmp_path):
+    worktrees.exclude(tmp_path)
+    assert list(tmp_path.iterdir()) == []

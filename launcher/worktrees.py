@@ -38,6 +38,27 @@ def exists(project_cwd, name: str) -> bool:
     return path(project_cwd, name).is_dir()
 
 
+def exclude(project_cwd, run: Runner = default_run) -> None:
+    """Keep the worktrees out of the project's own `git status` and `git add -A`,
+    without touching its .gitignore. Best effort: a repo that refuses this works
+    the same, only with a noisier status."""
+    entry = "/.claude/worktrees/"
+    result = run(["git", "-C", str(project_cwd), "rev-parse", "--git-common-dir"])
+    common = (result.stdout or "").strip()
+    if result.returncode != 0 or not common:
+        return
+    target = Path(project_cwd) / common / "info" / "exclude"
+    try:
+        current = target.read_text() if target.exists() else ""
+        if entry in current.splitlines():
+            return
+        target.parent.mkdir(parents=True, exist_ok=True)
+        separator = "" if not current or current.endswith("\n") else "\n"
+        target.write_text(f"{current}{separator}{entry}\n")
+    except OSError:
+        return
+
+
 def _error(result, fallback: str) -> str:
     return (result.stderr or "").strip() or fallback
 
