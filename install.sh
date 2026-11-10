@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Install (or update) the devbox launcher as a systemd --user service, along
-# with `agentctl` and the agents' reaper timer and restore-at-boot unit.
+# with `agentctl` and the agents' reaper timer and restore-at-boot unit. On a
+# Mac the same three are launchd agents instead; see docs/macos.md.
 #
 # Run this as the user whose Claude sessions the launcher will manage — it
 # installs into that user's home and runs under their systemd instance. Only
@@ -53,6 +54,18 @@ else
     warn "the 'claude' CLI is not on PATH; assuming $CLAUDE_BIN_DIR — install Claude Code and re-run this script"
 fi
 
+# A terminal app can put a shim of its own first on PATH, from a temporary
+# directory that will be gone when launchd next starts the job.
+case "$CLAUDE_BIN_DIR" in
+    /var/folders/*|/private/var/folders/*|/tmp/*|/private/tmp/*)
+        if [ -x "$HOME/.local/bin/claude" ]; then
+            CLAUDE_BIN_DIR="$HOME/.local/bin"
+        else
+            warn "the 'claude' on PATH is in a temporary directory ($CLAUDE_BIN_DIR); install Claude Code permanently and re-run this script"
+        fi
+        ;;
+esac
+
 command -v tailscale >/dev/null || warn "tailscale is not installed; see SECURITY.md before exposing this service any other way"
 
 # --- install ----------------------------------------------------------------
@@ -104,48 +117,118 @@ render() {
         -e "s|@PORT@|$PORT|g" \
         -e "s|@RUN_USER@|$RUN_USER|g" \
         -e "s|@CLAUDE_BIN_DIR@|$CLAUDE_BIN_DIR|g" \
+        -e "s|@LOG_DIR@|${LOG_DIR:-}|g" \
         "$1" > "$2"
 }
 
-mkdir -p "$UNIT_DIR"
-note "writing $UNIT_DIR/$UNIT"
-render "$REPO_DIR/devbox-launcher.service.in" "$UNIT_DIR/$UNIT"
-note "writing the agents reaper and restore units"
-render "$REPO_DIR/agents-reap.service.in" "$UNIT_DIR/agents-reap.service"
-install -m 0644 "$REPO_DIR/agents-reap.timer" "$UNIT_DIR/agents-reap.timer"
-render "$REPO_DIR/agents-restore.service.in" "$UNIT_DIR/agents-restore.service"
+install_systemd() {
+    mkdir -p "$UNIT_DIR"
+    note "writing $UNIT_DIR/$UNIT"
+    render "$REPO_DIR/devbox-launcher.service.in" "$UNIT_DIR/$UNIT"
+    note "writing the agents reaper and restore units"
+    render "$REPO_DIR/agents-reap.service.in" "$UNIT_DIR/agents-reap.service"
+    install -m 0644 "$REPO_DIR/agents-reap.timer" "$UNIT_DIR/agents-reap.timer"
+    render "$REPO_DIR/agents-restore.service.in" "$UNIT_DIR/agents-restore.service"
 
-# Without lingering, the service dies at logout and never comes back after a
-# reboot — which is exactly when you most want it (you are away from the box).
-if [ ! -e "/var/lib/systemd/linger/$USER" ]; then
-    note "enabling lingering so the service survives logout and reboot (needs sudo)"
-    sudo loginctl enable-linger "$USER" \
-        || warn "could not enable lingering; run: sudo loginctl enable-linger $USER"
-fi
+    # Without lingering, the service dies at logout and never comes back after a
+    # reboot — which is exactly when you most want it (you are away from the box).
+    if [ ! -e "/var/lib/systemd/linger/$USER" ]; then
+        note "enabling lingering so the service survives logout and reboot (needs sudo)"
+        sudo loginctl enable-linger "$USER" \
+            || warn "could not enable lingering; run: sudo loginctl enable-linger $USER"
+    fi
 
-note "starting the service"
-systemctl --user daemon-reload
-systemctl --user enable --now "$UNIT"
-systemctl --user restart "$UNIT"
+    note "starting the service"
+    systemctl --user daemon-reload
+    systemctl --user enable --now "$UNIT"
+    systemctl --user restart "$UNIT"
 
-# The reaper parks idle agents (3 days) and deletes idle scratch sessions
-# (12 hours). Restore only runs at boot: starting it now would start every
-# agent marked active, which an install has no business doing.
-note "enabling the agents reaper timer and restore-at-boot unit"
-systemctl --user enable --now agents-reap.timer
-systemctl --user enable agents-restore.service
+    # The reaper parks idle agents (3 days) and deletes idle scratch sessions
+    # (12 hours). Restore only runs at boot: starting it now would start every
+    # agent marked active, which an install has no business doing.
+    note "enabling the agents reaper timer and restore-at-boot unit"
+    systemctl --user enable --now agents-reap.timer
+    systemctl --user enable agents-restore.service
+}
 
-# The service reports "active (running)" in between crash-loop restarts, so
-# only an actual HTTP answer proves the install worked.
+# Reloading a job that was just unloaded can fail while launchd finishes
+# removing it, so give it a moment.
+launchd_load() {
+    local target="$LAUNCHD_DOMAIN/$1" attempt
+    launchctl bootout "$target" 2>/dev/null || true
+    launchctl enable "$target"
+    for attempt in 1 2 3 4 5; do
+        launchctl bootstrap "$LAUNCHD_DOMAIN" "$AGENT_DIR/$1.plist" 2>/dev/null && return 0
+        sleep 1
+    done
+    die "launchd would not load $1; try: launchctl bootstrap $LAUNCHD_DOMAIN $AGENT_DIR/$1.plist"
+}
+
+# LaunchAgents in the gui domain, not daemons: they run in the logged-in
+# session, which is where Claude Code's Keychain login can be read.
+install_launchd() {
+    AGENT_DIR="$HOME/Library/LaunchAgents"
+    LAUNCHD_DOMAIN="gui/$(id -u)"
+    launchctl print "$LAUNCHD_DOMAIN" >/dev/null 2>&1 \
+        || die "no desktop session for $USER: log in to this Mac (see docs/macos.md) and re-run this script"
+
+    mkdir -p "$AGENT_DIR" "$LOG_DIR"
+    local label
+    for label in devbox.launcher devbox.agents-reap devbox.agents-restore; do
+        note "writing $AGENT_DIR/$label.plist"
+        render "$REPO_DIR/launchd/$label.plist.in" "$AGENT_DIR/$label.plist"
+        plutil -lint -s "$AGENT_DIR/$label.plist" || die "$label.plist is not a valid plist"
+    done
+
+    # The restore job is left for launchd to load at the next login: loading it
+    # now would start every agent marked active, which an install has no
+    # business doing.
+    note "starting the launcher and the agents reaper"
+    launchd_load "devbox.launcher"
+    launchd_load "devbox.agents-reap"
+}
+
+macos_notes() {
+    # ssh runs a command without the login files that add Homebrew to PATH, so
+    # Copy terminal command would fail with "tmux: command not found".
+    if ! env -i HOME="$HOME" /bin/zsh -c 'command -v tmux' >/dev/null 2>&1; then
+        warn "tmux is not on PATH for commands run over ssh; add this to ~/.zshenv:"
+        # shellcheck disable=SC2016  # $PATH is for ~/.zshenv to expand
+        printf '    export PATH="%s:%s:$PATH"\n' "$(dirname "$(command -v tmux)")" "$BIN_DIR" >&2
+    fi
+    if fdesetup status 2>/dev/null | grep -q 'FileVault is On'; then
+        warn "FileVault is on: after a power cut this Mac waits for a password before anything starts; see docs/macos.md"
+    fi
+    if pmset -g 2>/dev/null | grep -Eq '^ *sleep +[1-9]'; then
+        warn "this Mac can go to sleep, which takes the launcher and agents offline; see docs/macos.md"
+    fi
+}
+
+case "$(uname -s)" in
+    Darwin)
+        LOG_DIR="$HOME/Library/Logs/devbox-launcher"
+        LOG_HINT="$LOG_DIR/launcher.log"
+        install_launchd
+        ;;
+    *)
+        LOG_HINT="journalctl --user -u $UNIT -n 50"
+        install_systemd
+        ;;
+esac
+
+# A service can look alive in between crash-loop restarts, so only an actual
+# HTTP answer proves the install worked.
 note "waiting for the launcher to answer on http://$HOST:$PORT/"
 for attempt in $(seq 1 10); do
     if curl -fsS -o /dev/null "http://$HOST:$PORT/" 2>/dev/null; then
         printf '\033[32mok:\033[0m launcher is up on http://%s:%s/\n' "$HOST" "$PORT"
         break
     fi
-    [ "$attempt" -lt 10 ] || die "launcher did not answer; check: journalctl --user -u $UNIT -n 50"
+    [ "$attempt" -lt 10 ] || die "launcher did not answer; check: $LOG_HINT"
     sleep 2
 done
+
+[ "$(uname -s)" != Darwin ] || macos_notes
 
 cat <<EOF
 
