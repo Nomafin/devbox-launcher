@@ -157,3 +157,16 @@ def test_sessions_read_window_activity(tmp_path, tmux):
     tmux.sessions["x"]["window_activity"] = 4242
     s = runtime.sessions(tmp_path, tmux)["x"]
     assert (s.activity, s.output) == (1000, 4242)
+
+
+@pytest.mark.parametrize("fresh", [True, False])
+def test_claude_never_stops_to_ask_about_chrome(fresh):
+    assert "--no-chrome" in shlex.split(runtime.claude_command(agent(), fresh=fresh, seed=None))
+
+
+def test_brief_dir_is_added_where_it_cannot_swallow_a_prompt(tmp_path):
+    argv = shlex.split(runtime.claude_command(agent(), fresh=True, seed=None,
+                                              extra=["the prompt"], brief_dir=tmp_path))
+    assert argv[argv.index("--add-dir") + 1] == str(tmp_path)
+    assert argv[argv.index("--add-dir") + 2].startswith("--")
+    assert argv[-1] == "the prompt"

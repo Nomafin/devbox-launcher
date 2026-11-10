@@ -74,32 +74,19 @@ class FakeHost:
         return self.disk_text
 
 
-class FakeGit:
-    def __init__(self, blocks=False, error=None):
-        self.blocks_it = blocks
-        self.error = error
-        self.renamed = []
-    def blocks_remote_control(self, path):
-        return self.blocks_it
-    def rename_origin(self, path):
-        self.renamed.append(str(path))
-        self.blocks_it = False
-        return self.error
-
-
 def _mkrepo(base: Path, name: str) -> None:
     (base / name / ".git").mkdir(parents=True)
 
 
-def make_app(tmp_path, auth=None, git=None, host=None):
+def make_app(tmp_path, auth=None, host=None):
     _mkrepo(tmp_path, "demo")
     return create_app(base_dir_fn=lambda: tmp_path, ctx_fn=agents_ctx(tmp_path),
-                      auth=auth or FakeAuth(), git=git or FakeGit(),
+                      auth=auth or FakeAuth(),
                       host=host or FakeHost(""), run_user=None)
 
 
-def make_client(tmp_path, auth=None, git=None, host=None):
-    return TestClient(make_app(tmp_path, auth, git, host))
+def make_client(tmp_path, auth=None, host=None):
+    return TestClient(make_app(tmp_path, auth, host))
 
 
 # --- the page ----------------------------------------------------------------
@@ -256,7 +243,7 @@ def test_the_empty_state_says_what_to_do(tmp_path):
     empty = tmp_path / "empty"
     empty.mkdir()
     app = create_app(base_dir_fn=lambda: empty, ctx_fn=agents_ctx(empty), auth=FakeAuth(),
-                     git=FakeGit(), host=FakeHost(""), run_user=None)
+                     host=FakeHost(""), run_user=None)
     body = TestClient(app).get("/").text
     assert "Clone a repo into" in body
 
@@ -287,50 +274,6 @@ def test_a_box_that_cannot_report_anything_still_shows_the_count(tmp_path):
     data = client.get("/api/projects").json()
     assert data["count"] == "0 agents running"
     assert data["usage"] == ""
-
-
-# --- the origin gotcha -------------------------------------------------------
-
-def test_a_repo_with_a_github_origin_is_flagged_on_its_project_row(tmp_path):
-    body = make_client(tmp_path, git=FakeGit(blocks=True)).get("/").text
-    assert "origin points at GitHub" in body
-    assert 'action="/fix-remote/demo"' in body
-
-
-def test_a_clean_repo_is_not_nagged(tmp_path):
-    body = make_client(tmp_path, git=FakeGit(blocks=False)).get("/").text
-    assert "origin points at GitHub" not in body
-
-
-def test_the_fix_renames_the_remote_and_clears_the_warning(tmp_path):
-    git = FakeGit(blocks=True)
-    client = make_client(tmp_path, git=git)
-    data = client.post("/api/fix-remote/demo").json()
-    assert git.renamed == [str(tmp_path / "demo")]
-    assert "origin points at GitHub" not in data["projects"][0]["html"]
-
-
-def test_the_fix_of_an_unknown_slug_touches_nothing(tmp_path):
-    git = FakeGit(blocks=True)
-    client = make_client(tmp_path, git=git)
-    client.post("/api/fix-remote/nope")
-    assert git.renamed == []
-
-
-def test_a_refused_fix_says_why_in_the_journal(tmp_path, caplog):
-    git = FakeGit(blocks=True, error="This repo already has a remote named github.")
-    client = make_client(tmp_path, git=git)
-    with caplog.at_level(logging.WARNING, logger="launcher"):
-        client.post("/api/fix-remote/demo")
-    assert "already has a remote named github" in caplog.text
-
-
-def test_the_form_fallback_redirects_like_the_others(tmp_path):
-    git = FakeGit(blocks=True)
-    client = make_client(tmp_path, git=git)
-    response = client.post("/fix-remote/demo", follow_redirects=False)
-    assert response.status_code == 303
-    assert git.renamed == [str(tmp_path / "demo")]
 
 
 # --- hardening ---------------------------------------------------------------
@@ -407,7 +350,7 @@ def run_client(tmp_path, runner=None, user=ME):
     _mkrepo(tmp_path, "demo")
     return TestClient(create_app(
         base_dir_fn=lambda: tmp_path, ctx_fn=agents_ctx(tmp_path), auth=FakeAuth(),
-        git=FakeGit(), host=FakeHost(""), runner=runner or FakeRun(), run_user=user))
+        host=FakeHost(""), runner=runner or FakeRun(), run_user=user))
 
 
 def post(client, path, data=None, headers=AS_ME):

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>devbox.agents-reap</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>@VENV@/bin/agentctl</string>
+    <string>reap</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>LAUNCHER_BASE_DIR</key>
+    <string>@BASE_DIR@</string>
+    <key>PATH</key>
+    <string>@CLAUDE_BIN_DIR@:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>LANG</key>
+    <string>en_US.UTF-8</string>
+  </dict>
+  <!-- Every 30 minutes: park idle agents, delete idle scratch sessions. -->
+  <key>StartInterval</key>
+  <integer>1800</integer>
+  <key>StandardOutPath</key>
+  <string>@LOG_DIR@/agents-reap.log</string>
+  <key>StandardErrorPath</key>
+  <string>@LOG_DIR@/agents-reap.log</string>
+</dict>
+</plist>

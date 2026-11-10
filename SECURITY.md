@@ -28,9 +28,6 @@ Anyone who can open the UI can:
   may contain source code, file paths or error text — and, through *Open in
   the Claude app*, the link to a live agent's session (opening it still needs
   your Claude account);
-- **rename a repo's `origin` remote to `github`** (a legacy button, shown only
-  for a GitHub `origin`; besides agent worktrees and branches, the only write
-  the launcher performs inside a repo);
 - **complete a Claude sign-in** if the box is signed out — which binds the box
   to *their* Claude account.
 - **restart any agent in a different permission mode** — *Default

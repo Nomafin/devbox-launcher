@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>devbox.agents-restore</string>
+  <!-- Claude has to reach claude.ai to connect: wait up to 60 s for DNS, then
+       try regardless (a failed agent says why on its row). -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/sh</string>
+    <string>-c</string>
+    <string>for i in $(seq 60); do /usr/bin/dscacheutil -q host -a name claude.ai | /usr/bin/grep -q address &amp;&amp; break; sleep 1; done; exec "$0" restore</string>
+    <string>@VENV@/bin/agentctl</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>LAUNCHER_BASE_DIR</key>
+    <string>@BASE_DIR@</string>
+    <key>PATH</key>
+    <string>@CLAUDE_BIN_DIR@:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>LANG</key>
+    <string>en_US.UTF-8</string>
+  </dict>
+  <!-- Runs when launchd loads this file at login. The installer writes the file
+       but does not load it: starting every agent marked active is no business
+       of an install. Running again without a reboot is harmless, as restore
+       skips an agent that is already live. -->
+  <key>RunAtLoad</key>
+  <true/>
+  <!-- `agentctl restore` starts the agents' tmux server and then exits; the
+       agents must outlive it. -->
+  <key>AbandonProcessGroup</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>@LOG_DIR@/agents-restore.log</string>
+  <key>StandardErrorPath</key>
+  <string>@LOG_DIR@/agents-restore.log</string>
+</dict>
+</plist>
