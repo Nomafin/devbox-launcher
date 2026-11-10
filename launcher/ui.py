@@ -339,6 +339,7 @@ body.show-parked .agents:has(.row.agent) { display: block; }
 .search { display: flex; gap: .5rem; margin-bottom: .75rem; }
 .search input { margin: 0; min-width: 0; }
 .search .btn { flex: none; }
+.prompt { white-space: pre-wrap; overflow-wrap: anywhere; margin-top: .5rem; }
 """
 
 # Progressive enhancement: every control is a real form that works without
@@ -975,9 +976,11 @@ def _permission_agent(path: str, current: str | None, running: bool) -> str:
                         note=_MODE_RESTART_NOTE if running else _MODE_NOTE)
 
 def page(*, rows: list[str], count: str, usage: str = "", signed_in: bool,
-         run: bool = False, parked: int = 0, github: bool = False) -> str:
+         run: bool = False, parked: int = 0, github: bool = False,
+         schedules: bool = False) -> str:
+    links = (_LINK_GITHUB if github else "") + (_LINK_SCHEDULES if schedules else "")
     return _PAGE.format(css=_CSS, js=(_RUN_JS + _JS) if run else _JS,
-                        links=_LINKS if github else "",
+                        links=_LINKS.format(links=links) if links else "",
                         runbox=_RUNBOX if run else "",
                         count=escape(count), usage=escape(usage),
                         parked=_PARKED_TOGGLE.format(n=parked, hidden="" if parked else "hidden"),
@@ -1063,7 +1066,9 @@ def login_error(error: str) -> str:
 # that changes on its own, and a meta refresh covers it.
 
 _LINKS = """
-<nav class="links"><a href="/clone">Clone</a><a href="/new-project">New project</a></nav>"""
+<nav class="links">{links}</nav>"""
+_LINK_GITHUB = '<a href="/clone">Clone</a><a href="/new-project">New project</a>'
+_LINK_SCHEDULES = '<a href="/schedules">Schedules</a>'
 
 _SUB_PAGE = """<!doctype html>
 <html lang="en">
@@ -1203,6 +1208,73 @@ def clone_status_page(*, slug: str, state: str, error: str | None = None,
 
 def new_project_page(*, name: str = "", error: str | None = None) -> str:
     return _sub_page("New project", _err(error) + _NEW_PROJECT.format(name=escape(name)))
+
+
+# --- schedules --------------------------------------------------------------
+
+_SCHEDULE_ROW = """<div class="card">
+  <p class="step"><code>{key}</code>{paused}</p>
+  <p class="hint">{times} · {mode}{model}</p>
+  <p class="hint">{last}</p>
+  <details><summary class="hint">Prompt</summary><p class="hint prompt">{prompt}</p></details>
+  <div class="pfoot">
+    <form method="post" action="/schedules/{key}/run"><button class="btn" type="submit">Run now</button></form>
+    <form method="post" action="/schedules/{key}/{toggle}"><button class="btn quiet" type="submit">{toggle_label}</button></form>
+    <a class="btn quiet" href="/schedules?edit={key}">Edit</a>
+    <form method="post" action="/schedules/{key}/delete"><button class="btn quiet" type="submit">Delete</button></form>
+  </div>
+</div>"""
+
+_SCHEDULE_FORM = """<div class="card">
+  <p class="step">{title}</p>
+  <form method="post" action="/schedules">
+    <label for="project">Project</label>
+    <select id="project" name="project">{projects}</select>
+    <label for="name">Agent name</label>
+    <input id="name" name="name" value="{name}" placeholder="e.g. nightly" autocapitalize="off"
+           autocomplete="off" spellcheck="false" required>
+    <p class="hint">Works on its own branch, <code>agent/&lt;name&gt;</code>, and opens a pull request.</p>
+    <label for="times">Times of day</label>
+    <input id="times" name="times" value="{times}" placeholder="06:00, 18:00" autocomplete="off" required>
+    <label for="prompt">Prompt</label>
+    <textarea id="prompt" name="prompt" required>{prompt}</textarea>
+    <label for="mode">Permission mode</label>
+    <select id="mode" name="mode">{modes}</select>
+    <label for="model">Model (optional)</label>
+    <input id="model" name="model" value="{model}" placeholder="e.g. sonnet" autocapitalize="off"
+           autocomplete="off" spellcheck="false">
+    <button class="btn" type="submit">Save</button>
+  </form>
+</div>"""
+
+
+def _options(values, current, label=str) -> str:
+    return "".join(f'<option value="{escape(v)}"{" selected" if v == current else ""}>'
+                   f'{escape(label(v))}</option>' for v in values)
+
+
+def schedules_page(*, schedules, projects: list[str], error: str | None = None,
+                   form: dict | None = None, result: str | None = None) -> str:
+    rows = "".join(_SCHEDULE_ROW.format(
+        key=escape(s.key), times=escape(", ".join(s.times)),
+        paused=" · paused" if not s.enabled else "",
+        mode=escape(permission_label(s.mode)),
+        model=f" · {escape(s.model)}" if s.model else "",
+        last=escape(s.last_result or "Has not run yet."), prompt=escape(s.prompt),
+        toggle="pause" if s.enabled else "resume",
+        toggle_label="Pause" if s.enabled else "Resume") for s in schedules)
+    if not rows:
+        rows = '<div class="empty">Nothing is scheduled.</div>'
+    f = form or {}
+    body = _SCHEDULE_FORM.format(
+        title="Edit" if form else "New schedule",
+        projects=_options(projects, f.get("project")),
+        name=escape(f.get("name", "")), times=escape(f.get("times", "")),
+        prompt=escape(f.get("prompt", "")), model=escape(f.get("model", "")),
+        modes=_options(("auto", "acceptEdits", "plan", "default"), f.get("mode", "auto"),
+                       permission_label))
+    done = f'<div class="card"><p class="hint">{escape(result)}</p></div>' if result else ""
+    return _sub_page("Schedules", _err(error) + done + rows + body)
 
 
 _RUNBOX = """<dialog id="runbox" class="runbox" aria-labelledby="runbox-title">

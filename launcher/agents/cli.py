@@ -8,7 +8,10 @@ the right follow-up question (create? start fresh anyway? recreate?).
 import argparse
 import json
 import sys
-from . import service
+from dataclasses import asdict
+from pathlib import Path
+
+from . import schedule, service
 from .model import MAIN, SEP, AgentError
 
 TARGETED = ("resolve", "new", "start", "stop", "park", "archive", "mode", "brief-status")
@@ -41,6 +44,19 @@ def _parser() -> argparse.ArgumentParser:
     sc.add_argument("--project")
     sub.add_parser("reap", help="park idle agents, delete idle scratch sessions")
     sub.add_parser("restore", help="start agents that should be running")
+    sch = sub.add_parser("schedule", help="start agents with a prompt at set times")
+    actions = sch.add_subparsers(dest="action", required=True)
+    add = actions.add_parser("add", help="add a schedule, or replace this agent's")
+    add.add_argument("target", help="<project>/<name>; the agent is created on its first run")
+    add.add_argument("--at", required=True, help="times of day, e.g. 06:00,18:00")
+    add.add_argument("--prompt")
+    add.add_argument("--prompt-file")
+    add.add_argument("--mode", default="auto")
+    add.add_argument("--model")
+    actions.add_parser("ls", help="list schedules")
+    actions.add_parser("tick", help="start whatever is due (the timer runs this)")
+    for name in ("rm", "run", "pause", "resume"):
+        actions.add_parser(name).add_argument("target", help="<project>/<name>")
     imp = sub.add_parser("import", help="one-time migration of old sessions")
     imp.add_argument("--dry-run", action="store_true")
     return p
@@ -76,8 +92,40 @@ def _ls_text(ctx, vs) -> str:
     return "\n".join(lines)
 
 
+def _schedule(ctx, args) -> tuple[object, str]:
+    if args.action == "add":
+        if bool(args.prompt) == bool(args.prompt_file):
+            raise AgentError(AgentError.INVALID, "give --prompt or --prompt-file")
+        try:
+            prompt = args.prompt or Path(args.prompt_file).read_text()
+        except OSError as exc:
+            raise AgentError(AgentError.INVALID, f"could not read the prompt: {exc}") from exc
+        s = schedule.add(ctx, args.target, times=args.at, prompt=prompt,
+                         mode=args.mode, model=args.model)
+        return asdict(s), f"{s.key} at {', '.join(s.times)}"
+    if args.action == "ls":
+        found = schedule.load(ctx.root)
+        return ({"schedules": [asdict(s) for s in found]},
+                "\n".join(f"{s.key:<36} {','.join(s.times):<24} "
+                          f"{'on' if s.enabled else 'paused':<7}{s.last_result or ''}".rstrip()
+                          for s in found))
+    if args.action == "tick":
+        done = schedule.tick(ctx)
+        return {"done": done}, "\n".join(done)
+    if args.action == "run":
+        result = schedule.run_now(ctx, args.target)
+        return {"result": result}, result
+    if args.action == "rm":
+        schedule.remove(ctx, args.target)
+        return {}, ""
+    s = schedule.set_enabled(ctx, args.target, args.action == "resume")
+    return asdict(s), s.key
+
+
 def _run(ctx, args, extra) -> tuple[object, str]:
     """(json payload, text output) for one command."""
+    if args.cmd == "schedule":
+        return _schedule(ctx, args)
     if args.cmd == "ls":
         project, places = args.project, ()
         if args.dir:

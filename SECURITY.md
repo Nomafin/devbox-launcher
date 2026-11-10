@@ -41,6 +41,9 @@ Anyone who can open the UI can:
   projects are pre-trusted when an agent starts there, so Claude reads its
   settings and hooks without asking. Give the box a GitHub account that reaches
   only what its agents may touch;
+- **with `LAUNCHER_SCHEDULES=1`: schedule a prompt for any project, which then runs
+  with nobody watching**, in `auto` mode unless set otherwise. An unattended agent
+  has everything your user has, including the box's GitHub login and SSH key;
 - **run arbitrary shell commands as your user**, *if* you have enabled **Run
   command** by setting `LAUNCHER_RUN_USER` — see below.
 

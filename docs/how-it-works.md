@@ -25,6 +25,7 @@ behind a command line.
 | `agents/runtime.py` | tmux on the `agents` socket, and the `claude` command line |
 | `agents/briefs.py` | Briefs, the seed for a fresh conversation, staleness |
 | `agents/places.py` | Which project a directory or slug belongs to |
+| `agents/schedule.py` | Schedules: `~/.config/agents/schedules.json`, what is due, starting a run |
 | `agents/cli.py` | `agentctl` |
 | `agents/importer.py` | One-time migration of the old launcher instances |
 | `tmuxctl.py` | The launcher's own tmux socket (sign-in and Run command only) |

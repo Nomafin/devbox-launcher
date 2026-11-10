@@ -23,6 +23,8 @@ RUN_USER="${LAUNCHER_RUN_USER:-}"
 GITHUB="${LAUNCHER_GITHUB:-}"
 # Whose repo invitations the Clone page accepts. Empty = none.
 GITHUB_INVITES_FROM="${LAUNCHER_GITHUB_INVITES_FROM:-}"
+# The Schedules page and the job that runs them. Empty = off.
+SCHEDULES="${LAUNCHER_SCHEDULES:-}"
 UNIT_DIR="$HOME/.config/systemd/user"
 UNIT="devbox-launcher.service"
 BIN_DIR="$HOME/.local/bin"
@@ -76,6 +78,10 @@ command -v tailscale >/dev/null || warn "tailscale is not installed; see SECURIT
 note "creating the project base dir ($BASE_DIR)"
 mkdir -p "$BASE_DIR"
 
+# For agentctl in a terminal, where the units' environment is not set.
+mkdir -p "$HOME/.config/devbox-launcher"
+printf '%s\n' "$BASE_DIR" > "$HOME/.config/devbox-launcher/base-dir"
+
 note "creating the venv ($VENV)"
 mkdir -p "$(dirname "$VENV")"
 [ -x "$VENV/bin/python" ] || python3 -m venv "$VENV"
@@ -123,6 +129,7 @@ render() {
         -e "s|@CLAUDE_BIN_DIR@|$CLAUDE_BIN_DIR|g" \
         -e "s|@LOG_DIR@|${LOG_DIR:-}|g" \
         -e "s|@GITHUB@|$GITHUB|g" \
+        -e "s|@SCHEDULES@|$SCHEDULES|g" \
         -e "s|@GITHUB_INVITES_FROM@|$GITHUB_INVITES_FROM|g" \
         "$1" > "$2"
 }
@@ -155,6 +162,19 @@ install_systemd() {
     note "enabling the agents reaper timer and restore-at-boot unit"
     systemctl --user enable --now agents-reap.timer
     systemctl --user enable agents-restore.service
+
+    if [ -n "$SCHEDULES" ]; then
+        note "starting the schedules timer"
+        render "$REPO_DIR/agents-schedule.service.in" "$UNIT_DIR/agents-schedule.service"
+        install -m 0644 "$REPO_DIR/agents-schedule.timer" "$UNIT_DIR/agents-schedule.timer"
+        systemctl --user daemon-reload
+        systemctl --user enable --now agents-schedule.timer
+    elif [ -e "$UNIT_DIR/agents-schedule.timer" ]; then
+        note "removing the schedules timer"
+        systemctl --user disable --now agents-schedule.timer || true
+        rm -f "$UNIT_DIR/agents-schedule.service" "$UNIT_DIR/agents-schedule.timer"
+        systemctl --user daemon-reload
+    fi
 }
 
 # Reloading a job that was just unloaded can fail while launchd finishes
@@ -192,6 +212,17 @@ install_launchd() {
     note "starting the launcher and the agents reaper"
     launchd_load "devbox.launcher"
     launchd_load "devbox.agents-reap"
+
+    local job="devbox.agents-schedule"
+    if [ -n "$SCHEDULES" ]; then
+        note "starting the schedules job"
+        render "$REPO_DIR/launchd/$job.plist.in" "$AGENT_DIR/$job.plist"
+        plutil -lint -s "$AGENT_DIR/$job.plist" || die "$job.plist is not a valid plist"
+        launchd_load "$job"
+    else
+        launchctl bootout "$LAUNCHD_DOMAIN/$job" 2>/dev/null || true
+        rm -f "$AGENT_DIR/$job.plist"
+    fi
 }
 
 macos_notes() {
