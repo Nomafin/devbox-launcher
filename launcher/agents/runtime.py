@@ -25,6 +25,12 @@ CONNECTED = re.compile(r"/remote-control is active")
 # its default is "No, exit", so it is answered rather than left to kill the
 # session. "Up Enter" selects "Yes, I trust this folder".
 TRUST_PROMPT = "Is this a project you created or one you trust"
+# What Claude Code says when the claude.ai organization has turned Remote
+# Control off (measured against 2.1.312). It shows only once /remote-control is
+# typed; at start the session just never connects.
+# Claude wraps the rest of the message onto the next line, so only the first
+# sentence is taken, and the advice is ours.
+BLOCKED = re.compile(r"Remote Control is disabled[^.\n]*\.?")
 RESUME_MISSING = re.compile(r"No conversation found", re.IGNORECASE)
 URL = re.compile(r"https://claude\.ai/code[/?]\S+")
 
@@ -140,6 +146,11 @@ def tail(home, name: str, run: Runner, lines: int = 20) -> list[str]:
 
 def connected(text: str) -> bool:
     return bool(CONNECTED.search(text or ""))
+
+
+def blocked(text: str) -> str | None:
+    found = BLOCKED.search(text or "")
+    return f"{found.group(0).strip()} A Claude organization admin must allow it." if found else None
 
 
 def url(text: str) -> str | None:

@@ -902,7 +902,10 @@ _RUN_DONE = """<div class="pair">
 _RUN_JS = """
 window.runPanel = function (root, slug) {
   var api = '/api/run/' + encodeURIComponent(slug);
-  var timer = null, key = null, stopped = false;
+  var timer = null, key = null, stopped = false, changed = 0;
+  // A prompt that prints nothing (`read x`) looks like a command still busy;
+  // after a while without output, say it may be waiting for an answer.
+  var QUIET_MS = 4000;
 
   function ok(r) { if (!r.ok) throw new Error(r.status); return r.json(); }
   function keyOf(d) { return d.exists + '/' + d.running; }
@@ -918,15 +921,24 @@ window.runPanel = function (root, slug) {
 
   function apply(d) {
     if (stopped) return;
+    var now = Date.now();
     if (keyOf(d) !== key) {
       render(d);
+      changed = now;
     } else {
       var t = term();
       if (t && t.textContent !== d.output) {
         var atEnd = t.scrollTop + t.clientHeight >= t.scrollHeight - 8;
         t.textContent = d.output;
         if (atEnd) t.scrollTop = t.scrollHeight;
+        changed = now;
       }
+    }
+    var exit = root.querySelector('.exit');
+    if (d.running && exit) {
+      exit.textContent = now - changed >= QUIET_MS
+        ? 'Running… no output for a while. Waiting for input? Answer below.'
+        : 'Running…';
     }
     clearTimeout(timer);
     if (d.running) timer = setTimeout(load, document.hidden ? 5000 : 1500);
@@ -1001,7 +1013,7 @@ def run_form(*, slug: str) -> str:
 
 
 def run_view(*, slug: str, command: str, cwd: str, output: str, running: bool,
-             exit_code: int | None) -> str:
+             exit_code: int | None, signal: int | None = None) -> str:
     if running:
         exit_cls, exit_text = "busy", "Running…"
     elif exit_code is None:
@@ -1009,6 +1021,10 @@ def run_view(*, slug: str, command: str, cwd: str, output: str, running: bool,
     else:
         exit_cls = "ok" if exit_code == 0 else "bad"
         exit_text = f"Finished — exit code {exit_code}"
+        if signal == 2:
+            exit_text += " (interrupted)"
+        elif signal:
+            exit_text += f" (killed by signal {signal})"
     controls = (_RUN_LIVE if running else _RUN_DONE).format(slug=escape(slug))
     return _RUN_VIEW.format(
         command=escape(command), cwd=escape(cwd), output=escape(output),

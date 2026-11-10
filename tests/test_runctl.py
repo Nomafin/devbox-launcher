@@ -92,6 +92,16 @@ def test_status_once_finished_carries_the_exit_code():
     assert runctl.status("demo", run=run) == runctl.RunStatus(True, False, 3)
 
 
+def test_status_of_a_command_killed_by_a_signal_reads_as_the_shell_would():
+    run = responder(lambda cmd: (0, "1 :2\n"))
+    assert runctl.status("demo", run=run) == runctl.RunStatus(True, False, 130, 2)
+
+
+def test_status_once_finished_carries_the_exit_code_not_a_signal():
+    run = responder(lambda cmd: (0, "1 0:0\n"))
+    assert runctl.status("demo", run=run) == runctl.RunStatus(True, False, 0)
+
+
 def test_status_without_a_session():
     assert runctl.status("demo", run=responder(lambda cmd: (1, ""))) == runctl.NONE
 

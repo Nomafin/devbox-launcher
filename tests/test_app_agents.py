@@ -205,3 +205,15 @@ def test_running_agent_offers_its_terminal_command(app_world):
     html = rows(app_world)["notes/main"]
     assert 'data-terminal="tmux -u -L agents attach -t &quot;&#x27;=notes/main&#x27;&quot;"' in html
     assert 'data-user="' in html and "Copy terminal command" in html
+
+
+def test_agent_that_never_connects_says_why(app_world):
+    app_world.tmux.on_start = lambda s: s.update(pane="Welcome to Claude Code")
+    app_world.client.post("/api/agents/notes/main/start")
+    app_world.clock["t"] += 31
+    assert "Remote Control has not shown as connected" in rows(app_world)["notes/main"]
+    blocked = ("❯ /remote-control\n  ⎿  Remote Control is disabled by your organization's "
+               "policy. Contact your")
+    app_world.tmux.sessions["notes/main"]["screen"] = blocked
+    html = rows(app_world)["notes/main"]
+    assert "Remote Control is disabled by your organization&#x27;s policy." in html
