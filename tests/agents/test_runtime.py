@@ -157,3 +157,8 @@ def test_sessions_read_window_activity(tmp_path, tmux):
     tmux.sessions["x"]["window_activity"] = 4242
     s = runtime.sessions(tmp_path, tmux)["x"]
     assert (s.activity, s.output) == (1000, 4242)
+
+
+@pytest.mark.parametrize("fresh", [True, False])
+def test_claude_never_stops_to_ask_about_chrome(fresh):
+    assert "--no-chrome" in shlex.split(runtime.claude_command(agent(), fresh=fresh, seed=None))
