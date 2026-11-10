@@ -120,3 +120,7 @@ def test_unrecorded_mode_reads_as_the_settings_default():
     assert ui.permission_label(None) == "Default (settings)"
     assert ui.permission_label("default") == "Default (settings)"
     assert "Ask" not in ui._permission_agent("notes/main", None, False)
+
+
+def test_terminal_command_is_built_from_the_page_address():
+    assert "'ssh -t ' + button.dataset.user + '@' + location.hostname" in ui._JS

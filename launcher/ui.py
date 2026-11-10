@@ -12,6 +12,8 @@ template in JavaScript to drift out of step.
 
 from html import escape
 
+from .agents.runtime import SOCKET
+
 # Signal colors carry state and nothing else — no button, link, or border
 # borrows them — so a green row always means "a session is live", never
 # "here is a button".
@@ -97,6 +99,7 @@ h1 { font-size: 1.375rem; font-weight: 600; letter-spacing: -0.01em; margin: 0; 
    of the Stop button it sits beneath. */
 form.fix, form.gap { margin: .625rem 0 0; }
 .note { margin-top: .375rem; font-size: .75rem; color: var(--ink-dim); }
+.terminal { margin: .625rem 0 0; }
 /* Not `.link` — that name is taken by the login page's authorize URL, which is
    monospace, and .btn.link would inherit its family. */
 .btn.quiet { width: 100%; background: transparent; border-color: var(--edge);
@@ -439,6 +442,21 @@ _JS = r"""
     if (document.hidden) { clearTimeout(timer); } else { poll(); }
   });
 
+  // The terminal command needs the box's name as the browser reached it.
+  list.addEventListener('click', function (event) {
+    var button = event.target.closest('button[data-terminal]');
+    if (!button) return;
+    var command = 'ssh -t ' + button.dataset.user + '@' + location.hostname + ' ' +
+                  button.dataset.terminal;
+    // A click leaves focus on the button, and apply() skips a row holding
+    // focus: without the blur the row would stop updating until you tapped
+    // somewhere else.
+    var fallback = function () { window.prompt('Copy this command:', command); button.blur(); };
+    if (!navigator.clipboard) return fallback();
+    navigator.clipboard.writeText(command).then(
+      function () { button.textContent = 'Copied'; button.blur(); }, fallback);
+  });
+
   // Run command: a modal over the list rather than a page of its own. The
   // links still lead to /run/<slug>, which is where a browser without
   // <dialog> (or without this script) ends up.
@@ -620,6 +638,14 @@ _AGENT_BUTTON = """
 
 _MISSION = """<div class="mission">{text}</div>"""
 
+# The host is filled in by the page script from the address the launcher was
+# opened at, which is the box's tailnet name.
+_TERMINAL = """
+  <div class="terminal">
+    <button class="btn quiet" type="button" data-terminal="{attach}" data-user="{user}">Copy terminal command</button>
+    <div class="note">Paste into your own terminal. Ctrl-b d detaches; the agent keeps running.</div>
+  </div>"""
+
 # A page-level problem carried as a row, so it comes and goes with the polls
 # like any other: tmux on the agents socket not answering, say.
 _NOTICE_ROW = """<div class="row notice" data-slug="{slug}" data-state="failed">
@@ -671,7 +697,7 @@ def _agent_button(path, action, label, pending, force=False) -> str:
 
 def agent_row(*, key, name, display, state, status, running, parked, scratch, archivable,
               resumable, broken, mode, age=None, active=None, mission=None, reason=None,
-              url=None, stale=False, output=None) -> str:
+              url=None, stale=False, output=None, ssh_user=None) -> str:
     """One agent. `state` is the rail colour and the client's marker, as on
     project rows before: connected / starting / ready / failed / stopped."""
     path = key                       # "<project>/<name>": both segments are slugs
@@ -691,6 +717,12 @@ def agent_row(*, key, name, display, state, status, running, parked, scratch, ar
         buttons.append(_agent_button(path, "park", "Park", "Parking…"))
     if archivable and not running:
         buttons.append(_agent_button(path, "archive", "Archive", "Archiving…"))
+    if running and ssh_user and not broken:
+        # Quoted twice, as ssh hands the box's login shell the command as one
+        # string: zsh, on either side, expands a word starting with "=". Both
+        # name segments are slugs, so no quote can be inside.
+        attach = f"tmux -u -L {SOCKET} attach -t \"'={display}'\""
+        buttons.append(_TERMINAL.format(attach=escape(attach), user=escape(ssh_user)))
     return _AGENT_ROW.format(
         cls=" parked" if parked else "", key=escape(key), state=escape(state),
         name=escape(name), path=escape(path), action=action, label=escape(label),
