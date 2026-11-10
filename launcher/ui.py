@@ -86,8 +86,7 @@ h1 { font-size: 1.375rem; font-weight: 600; letter-spacing: -0.01em; margin: 0; 
        overflow-wrap: anywhere; }
 .age { color: var(--ink-dim); font-size: .8125rem; font-variant-numeric: tabular-nums; }
 
-/* Amber, not coral: a repo that needs its remote renamed is not a failure, it
-   is something to fix before you tap Start and wait seven seconds for nothing. */
+/* Amber, not coral: a note on a project is not a failure. */
 .warn { margin-top: .625rem; padding: .625rem .75rem; border-radius: .375rem;
         background: #241e12; border: 1px solid #5c4a24; font-size: .8125rem;
         color: #e8d3a8; }
@@ -382,17 +381,16 @@ _JS = r"""
     event.preventDefault();
     // Fresh, Park, Archive, Create and Quick chat all take seconds — a
     // worktree add or remove, or a session settling — so they show the same
-    // pending state as Start/Stop; the remote rename and a mode change on a
-    // stopped agent return in milliseconds and need none. ".gap" is a styling
+    // pending state as Start/Stop; a mode change on a stopped agent returns in
+    // milliseconds and needs none. ".gap" is a styling
     // class shared with ".fix" (same amount of breathing room above the
     // button); it is not the same behaviour, which is why it is not just
     // called "fix" too.
     if (form.classList.contains('fix')) { fix(form); } else { act(form); }
   });
 
-  // The remote rename and a stopped agent's mode. Same shape as act(), but there
-  // is no pending state to show on the row: both return in milliseconds and
-  // the reply redraws it.
+  // A stopped agent's mode. Same shape as act(), but there is no pending state
+  // to show on the row: it returns in milliseconds and the reply redraws it.
   function fix(form) {
     var button = form.querySelector('button');
     button.disabled = true;
@@ -553,20 +551,7 @@ _MODE_NOTE = "Used the next time this agent starts."
 # minute ago, and the number is only useful next to the state it qualifies.
 _AGE = """<span class="age">{age}</span>"""
 
-# The origin gotcha, said where it bites rather than in a runbook you are not
-# holding. The button is the launcher's only write into a repo, so it says
-# exactly which command it runs.
-_WARN = """
-  <div class="warn">
-    <div>{text}</div>
-    <form class="fix" method="post" action="/fix-remote/{slug}"
-          data-api="/api/fix-remote/{slug}" data-slug="{slug}">
-      <button class="btn ghost" type="submit">Rename origin &rarr; github</button>
-    </form>
-  </div>"""
-
-# The same amber block without the rename button: a refused name or git's own
-# error has nothing for that button to fix.
+# An amber note on a project's card: a refused name or git's own error.
 _NOTE = """
   <div class="warn"><div>{text}</div></div>"""
 
@@ -672,12 +657,11 @@ def permission_label(mode: str | None) -> str:
     return _MODE_LABELS.get(mode or "default", mode or "default")
 
 
-def project_row(*, slug, name, ident, warning=None, fix_remote=True, run=None,
+def project_row(*, slug, name, ident, warning=None, run=None,
                 run_tone="", new=True) -> str:
     return _PROJECT_ROW.format(
         slug=escape(slug), state="project", name=escape(name), ident=escape(ident),
-        warn=(_WARN if fix_remote else _NOTE).format(text=escape(warning), slug=escape(slug))
-        if warning else "",
+        warn=_NOTE.format(text=escape(warning)) if warning else "",
         new=_NEW_AGENT.format(slug=escape(slug)) if new else "",
         run="" if run is None else _RUN_ROW.format(
             slug=escape(slug), name=escape(name),

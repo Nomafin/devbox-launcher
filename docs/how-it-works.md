@@ -30,7 +30,6 @@ behind a command line.
 | `tmuxctl.py` | The launcher's own tmux socket (sign-in and Run command only) |
 | `authctl.py` | Drives `claude auth login` in a tmux session |
 | `discovery.py` | Scans the base dir for repos and groups |
-| `gitremote.py` | The legacy GitHub-`origin` note and its rename button |
 | `trust.py` | Seeds workspace trust in `~/.claude.json` |
 | `hostinfo.py` | RAM/disk readout for the page header |
 | `worktrees.py` | Every git worktree call: create, inspect, remove |
