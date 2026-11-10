@@ -34,6 +34,7 @@ class RunStatus:
     exists: bool                # a session is there, running or finished
     running: bool               # its command has not exited yet
     exit_code: int | None       # set once it has
+    signal: int | None = None   # what killed it, if a signal did (Ctrl-C: 2)
 
 
 NONE = RunStatus(exists=False, running=False, exit_code=None)
@@ -73,17 +74,24 @@ def _remember(slug: str, command: str, cwd, directory=None) -> None:
     os.replace(tmp, target)
 
 
-def _parse(dead: str, code: str) -> RunStatus:
+# "<dead> <status>:<signal>". A command killed by a signal has no exit status,
+# only the signal; it reads as the shell would report it, 128 + signal.
+_PANE_FORMAT = "#{pane_dead} #{pane_dead_status}:#{pane_dead_signal}"
+
+
+def _parse(dead: str, rest: str) -> RunStatus:
     if dead != "1":
         return RunStatus(exists=True, running=True, exit_code=None)
-    code = code.strip()
-    return RunStatus(exists=True, running=False,
-                     exit_code=int(code) if code.lstrip("-").isdigit() else None)
+    code, _, sig = rest.strip().partition(":")
+    if code.lstrip("-").isdigit():
+        return RunStatus(exists=True, running=False, exit_code=int(code))
+    if sig.isdigit() and int(sig) > 0:
+        return RunStatus(exists=True, running=False, exit_code=128 + int(sig), signal=int(sig))
+    return RunStatus(exists=True, running=False, exit_code=None)
 
 
 def status(slug: str, run: Runner = default_run) -> RunStatus:
-    result = run(tmux_args(["list-panes", "-t", session_name(slug), "-F",
-                            "#{pane_dead} #{pane_dead_status}"]))
+    result = run(tmux_args(["list-panes", "-t", session_name(slug), "-F", _PANE_FORMAT]))
     if result.returncode != 0:
         return NONE
     dead, _, code = (result.stdout or "").strip().partition(" ")
@@ -94,7 +102,7 @@ def statuses(run: Runner = default_run) -> dict[str, RunStatus]:
     """slug -> status for every project with a command, in one tmux call: the
     main page asks on every poll, and one call per project would add up."""
     result = run(tmux_args(["list-panes", "-a", "-F",
-                            "#{session_name} #{pane_dead} #{pane_dead_status}"]))
+                            "#{session_name} " + _PANE_FORMAT]))
     if result.returncode != 0:
         return {}
     out = {}
