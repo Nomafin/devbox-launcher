@@ -41,7 +41,11 @@ Anyone who can open the UI can:
 - **run arbitrary shell commands as your user**, *if* you have enabled **Run
   command** by setting `LAUNCHER_RUN_USER` — see below.
 
-There is no login, no session cookie, no CSRF token, and no audit log.
+There is no login, no session cookie, no CSRF token, and no audit log. What
+stands in for a CSRF token is the same-origin check: every request other than
+`GET` and `HEAD` must come from the launcher's own page (`Sec-Fetch-Site`,
+falling back to `Origin` matching the host), so a hostile page opened in the
+phone's browser cannot press any of these buttons.
 
 ## Why it is built that way
 
