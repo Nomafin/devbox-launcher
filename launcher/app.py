@@ -14,6 +14,7 @@ from . import runctl as _runctl
 from . import tmuxctl as _tmuxctl
 from . import trust as _trust
 from . import ui as _ui
+from . import worktrees as _worktrees
 from .agents import places as _places
 from .agents import registry as _registry
 from .agents import runtime as _runtime
@@ -77,8 +78,8 @@ _FROM_ENV = object()
 # A session that runs but never connects. The usual cause is the claude.ai
 # organization's policy, which Claude Code does not mention at start.
 # Read off the screen, so an agent that is connected but has a prompt or a
-# long answer covering the status line reads the same: hence "Show output".
-_NOT_CONNECTED = ("Remote Control has not shown as connected. Show output to see whether "
+# long answer covering the status line reads the same: hence "Screen now".
+_NOT_CONNECTED = ("Remote Control has not shown as connected. Screen now shows whether "
                   "the agent is waiting for an answer.")
 _AGENT_STATES = {"connected": "Live", "starting": "Starting…", "ready": "Not connected",
                  "failed": "Start failed", "stopped": "", "broken": "Worktree missing"}
@@ -185,13 +186,15 @@ def create_app(base_dir_fn=None, ctx_fn=None, svc=_service, trust=_trust, disc=_
             broken=v.broken, mode=a.mode, age=_age(v.uptime) if v.running else None,
             active=f"active {_age(int(c.now() - v.last_active))} ago" if not v.running else None,
             mission=v.mission, reason=reason,
-            url=url, stale=_pop(stale, a.key), output=v.running or v.dead, ssh_user=ssh_user)
+            url=url, stale=_pop(stale, a.key), output=v.running or v.dead, ssh_user=ssh_user,
+            branch=_worktrees.head_branch(a.workdir), own_copy=a.has_worktree)
 
     def project_html(place, run, listed: bool) -> str:
         label, tone = run_label(run)
         run_kw = {"run": label, "run_tone": tone} if allowed_user and listed else {}
         return _ui.project_row(slug=place.slug, name=place.name, ident=_home_relative(place.cwd),
-                               warning=notes.pop(place.slug, None), **run_kw)
+                               warning=notes.pop(place.slug, None),
+                               branch=_worktrees.head_branch(place.cwd), **run_kw)
 
     def snapshot() -> dict:
         c = ctx()
@@ -232,7 +235,7 @@ def create_app(base_dir_fn=None, ctx_fn=None, svc=_service, trust=_trust, disc=_
 
     def render() -> str:
         data = snapshot()
-        return _ui.page(rows=[p["html"] for p in data["projects"]], count=data["count"],
+        return _ui.page(rows=_ui.nest(data["projects"]), count=data["count"],
                         usage=data["usage"], signed_in=data["signedIn"],
                         run=bool(allowed_user), parked=data["parked"])
 

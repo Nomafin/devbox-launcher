@@ -9,6 +9,7 @@ easy and uncommitted work is not recoverable, so a worktree with anything of
 its own in it is refused with the reason rather than deleted.
 """
 
+import re
 import subprocess
 from pathlib import Path
 from typing import Callable
@@ -57,6 +58,29 @@ def exclude(project_cwd, run: Runner = default_run) -> None:
         target.write_text(f"{current}{separator}{entry}\n")
     except OSError:
         return
+
+
+def head_branch(repo) -> str | None:
+    """The branch checked out at `repo`, read from its HEAD file.
+
+    Read directly rather than by running git: every project and agent row asks
+    on every poll. `.git` is a file in a worktree, naming the git dir that holds
+    its HEAD. A detached HEAD reads as its short sha; no repo, or a HEAD that
+    cannot be read, as None.
+    """
+    git = Path(repo) / ".git"
+    try:
+        if git.is_file():
+            text = git.read_text().strip()
+            if not text.startswith("gitdir:"):
+                return None
+            git = Path(repo) / text[len("gitdir:"):].strip()
+        head = (git / "HEAD").read_text().strip()
+    except (OSError, ValueError):
+        return None
+    if head.startswith("ref:"):
+        return head[len("ref:"):].strip().removeprefix("refs/heads/") or None
+    return head[:7] if re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", head) else None
 
 
 def _error(result, fallback: str) -> str:

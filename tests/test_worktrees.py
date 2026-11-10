@@ -296,3 +296,41 @@ def test_exclude_is_added_once_and_keeps_what_is_there(tmp_path):
 def test_exclude_outside_a_repo_does_nothing(tmp_path):
     worktrees.exclude(tmp_path)
     assert list(tmp_path.iterdir()) == []
+
+
+def test_head_branch_reads_the_checked_out_branch(tmp_path):
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".git" / "HEAD").write_text("ref: refs/heads/feature/x\n")
+    assert worktrees.head_branch(tmp_path) == "feature/x"
+
+
+def test_head_branch_on_a_detached_head_is_the_short_sha(tmp_path):
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".git" / "HEAD").write_text("0123456789abcdef0123456789abcdef01234567\n")
+    assert worktrees.head_branch(tmp_path) == "0123456"
+
+
+def test_head_branch_follows_a_worktree_gitdir_file(tmp_path):
+    gitdir = tmp_path / "main" / ".git" / "worktrees" / "wt"
+    gitdir.mkdir(parents=True)
+    (gitdir / "HEAD").write_text("ref: refs/heads/agent/wt\n")
+    wt = tmp_path / "wt"
+    wt.mkdir()
+    (wt / ".git").write_text(f"gitdir: {gitdir}\n")
+    assert worktrees.head_branch(wt) == "agent/wt"
+
+
+def test_head_branch_of_a_real_worktree(tmp_path):
+    repo = tmp_path / "r"
+    subprocess.run(["git", "init", "-q", "-b", "main", str(repo)], check=True)
+    subprocess.run(["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@t",
+                    "commit", "-q", "--allow-empty", "-m", "x"], check=True)
+    assert worktrees.head_branch(repo) == "main"
+    wt = tmp_path / "wt"
+    subprocess.run(["git", "-C", str(repo), "worktree", "add", "-q", "-b", "agent/wt", str(wt)],
+                   check=True)
+    assert worktrees.head_branch(wt) == "agent/wt"
+
+
+def test_head_branch_outside_a_repo_is_none(tmp_path):
+    assert worktrees.head_branch(tmp_path) is None
