@@ -197,3 +197,11 @@ def test_write_from_this_page_or_a_terminal_is_allowed(app_world, headers):
 
 def test_reading_from_another_site_is_not_refused(app_world):
     assert app_world.client.get("/", headers={"Sec-Fetch-Site": "cross-site"}).status_code == 200
+
+
+def test_running_agent_offers_its_terminal_command(app_world):
+    assert "data-terminal" not in rows(app_world)["notes/main"]
+    app_world.client.post("/api/agents/notes/main/start")
+    html = rows(app_world)["notes/main"]
+    assert 'data-terminal="tmux -u -L agents attach -t &quot;&#x27;=notes/main&#x27;&quot;"' in html
+    assert 'data-user="' in html and "Copy terminal command" in html

@@ -1,3 +1,4 @@
+import getpass
 import logging
 import time
 from pathlib import Path
@@ -97,6 +98,8 @@ def create_app(base_dir_fn=None, ctx_fn=None, svc=_service, trust=_trust, disc=_
                run_user=_FROM_ENV) -> FastAPI:
     resolve_base = base_dir_fn or _base_dir
     allowed_user = _run_user() if run_user is _FROM_ENV else run_user
+    # Who to ssh in as for an agent's terminal: the user the launcher runs as.
+    ssh_user = getpass.getuser()
 
     def ctx():
         return ctx_fn() if ctx_fn else svc.Ctx.default(base_dir=resolve_base())
@@ -177,7 +180,7 @@ def create_app(base_dir_fn=None, ctx_fn=None, svc=_service, trust=_trust, disc=_
             broken=v.broken, mode=a.mode, age=_age(v.uptime) if v.running else None,
             active=f"active {_age(int(c.now() - v.last_active))} ago" if not v.running else None,
             mission=v.mission, reason=notes.pop(a.key, None) or a.last_error,
-            url=url, stale=_pop(stale, a.key), output=v.running or v.dead)
+            url=url, stale=_pop(stale, a.key), output=v.running or v.dead, ssh_user=ssh_user)
 
     def project_html(place, blocked, run, listed: bool) -> str:
         label, tone = run_label(run)
