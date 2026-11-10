@@ -1,0 +1,12 @@
+[Unit]
+Description=Start scheduled agent runs (checks every 5 minutes)
+
+[Timer]
+# The tick itself catches up a time missed by up to an hour (a reboot, say),
+# so no Persistent= is needed.
+OnBootSec=2min
+OnUnitActiveSec=5min
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target

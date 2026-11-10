@@ -25,12 +25,12 @@ behind a command line.
 | `agents/runtime.py` | tmux on the `agents` socket, and the `claude` command line |
 | `agents/briefs.py` | Briefs, the seed for a fresh conversation, staleness |
 | `agents/places.py` | Which project a directory or slug belongs to |
+| `agents/schedule.py` | Schedules: `~/.config/agents/schedules.json`, what is due, starting a run |
 | `agents/cli.py` | `agentctl` |
 | `agents/importer.py` | One-time migration of the old launcher instances |
 | `tmuxctl.py` | The launcher's own tmux socket (sign-in and Run command only) |
 | `authctl.py` | Drives `claude auth login` in a tmux session |
 | `discovery.py` | Scans the base dir for repos and groups |
-| `gitremote.py` | The legacy GitHub-`origin` note and its rename button |
 | `trust.py` | Seeds workspace trust in `~/.claude.json` |
 | `hostinfo.py` | RAM/disk readout for the page header |
 | `worktrees.py` | Every git worktree call: create, inspect, remove |
@@ -70,7 +70,8 @@ creates a detached tmux session `<project>/<name>` on socket
 workdir, running
 
 ```
-claude --remote-control <project>/<name> -n <project>/<name> --add-dir <briefs> \
+claude --remote-control <project>/<name> -n <project>/<name> --no-chrome \
+       --add-dir <briefs> \
        --resume <id> | --session-id <new id> --append-system-prompt-file <seed>
        [--permission-mode <mode>]
 ```

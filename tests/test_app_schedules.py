@@ -5,7 +5,7 @@ from launcher.agents import schedule, service
 from launcher.app import create_app
 
 from agents.conftest import FakeTmux, make_repo
-from test_app import FakeAuth, FakeGit, FakeHost
+from test_app import FakeAuth, FakeHost
 
 
 @pytest.fixture
@@ -20,7 +20,7 @@ def world(tmp_path):
 
     def client(on=True):
         return TestClient(create_app(
-            base_dir_fn=lambda: base, ctx_fn=lambda: ctx, auth=FakeAuth(), git=FakeGit(),
+            base_dir_fn=lambda: base, ctx_fn=lambda: ctx, auth=FakeAuth(),
             host=FakeHost(""), run_user=None, github_on=False, schedules_on=on),
             follow_redirects=False)
     client.ctx = ctx

@@ -210,14 +210,6 @@ class FakeRunner:
         pass
 
 
-class FakeGit:
-    def blocks_remote_control(self, repo):
-        return False
-
-    def rename_origin(self, repo):
-        return None
-
-
 class FakeHost:
     def memory(self):
         return "1.2 of 12 GB"
@@ -250,7 +242,7 @@ def main() -> None:
     ctx = build_world(FakeTmux())
     app = create_app(
         base_dir_fn=lambda: BASE, ctx_fn=lambda: ctx,
-        git=FakeGit(), host=FakeHost(), auth=FakeAuth(signed_in=not args.signed_out),
+        host=FakeHost(), auth=FakeAuth(signed_in=not args.signed_out),
         # Run command is shown when a run user is configured, as on a real box
         # that has opted in; the stub never runs anything.
         runner=FakeRunner(), run_user="you@example.com",

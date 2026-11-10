@@ -21,7 +21,7 @@ REMOTE = "origin"
 
 _REPOS = ("user/repos?per_page=100&sort=pushed"
           "&affiliation=owner,collaborator,organization_member")
-_REPO_FIELDS = ".[] | select(.archived | not) | {name, full_name, description, pushed_at, clone_url}"
+_REPO_FIELDS = ".[] | select(.archived | not) | {name, full_name, description, pushed_at, clone_url, ssh_url}"
 _INVITATIONS = "user/repository_invitations"
 _INVITATION_FIELDS = ".[] | [.id, .inviter.login, .repository.full_name] | @tsv"
 
@@ -61,8 +61,19 @@ class Client:
             raise GithubError(f"GitHub: {lines[-1]}" if lines else "GitHub did not answer.")
         return result.stdout or ""
 
+    def _ssh(self) -> bool:
+        """Whether git talks to GitHub over SSH here, as `gh` is set up to: then
+        a clone goes the same way, with the box's key, instead of over HTTPS,
+        which needs `gh auth setup-git` before a private repo can be cloned."""
+        try:
+            result = self._run(["gh", "config", "get", "git_protocol", "-h", "github.com"])
+        except OSError:
+            return False
+        return result.returncode == 0 and (result.stdout or "").strip() == "ssh"
+
     def repos(self, query: str = "") -> list[Repo]:
         """What this box's account can reach, most recently pushed first."""
+        url_field = "ssh_url" if self._ssh() else "clone_url"
         found = []
         for line in self._gh("api", "--paginate", _REPOS, "--jq", _REPO_FIELDS).splitlines():
             if not line.strip():
@@ -71,7 +82,7 @@ class Client:
                 r = json.loads(line)
                 found.append(Repo(slug=r["name"], full_name=r["full_name"],
                                   description=r.get("description") or "",
-                                  updated_on=r.get("pushed_at") or "", clone_url=r["clone_url"]))
+                                  updated_on=r.get("pushed_at") or "", clone_url=r.get(url_field) or r["clone_url"]))
             except (ValueError, KeyError, TypeError) as exc:
                 raise GithubError("GitHub's answer could not be read.") from exc
         needle = query.strip().lower()

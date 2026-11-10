@@ -325,8 +325,10 @@ ready-made `CLAUDE.md` block (which also tells agents about their briefs) is in
 
 Off by default. With `LAUNCHER_GITHUB=1 ./install.sh` the main page gets **Clone**
 and **New project** links; without it they are not there and the pages answer
-404. They use the box's `gh` login (`gh auth login`, then `gh auth setup-git`), so
-the launcher stores no token.
+404. They use the box's `gh` login, so the launcher stores no token. A clone goes
+the way `gh` is set to talk to git: over SSH with the box's key when
+`gh config get git_protocol` says `ssh`, otherwise over HTTPS, which needs
+`gh auth setup-git` once for private repos.
 
 **Clone** lists what that account can reach, most recently pushed first, with a
 search box. A repo is cloned in the background into
@@ -346,9 +348,10 @@ included, is left alone whoever sent it.
 
 ## Schedules
 
-macOS for now. With `LAUNCHER_SCHEDULES=1 ./install.sh` the main page gets a
-**Schedules** link, and a job checks every five minutes what is due. Off, there is
-no link and no job.
+With `LAUNCHER_SCHEDULES=1 ./install.sh` the main page gets a **Schedules** link,
+and a job checks every five minutes what is due: `agents-schedule.timer` on Linux,
+the `devbox.agents-schedule` launchd job on a Mac. Off, there is no link and no
+job.
 
 A schedule is a project, an agent name, times of day and a prompt. At each time the
 agent starts a new conversation with that prompt, on a branch of its own

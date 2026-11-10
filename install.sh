@@ -23,7 +23,7 @@ RUN_USER="${LAUNCHER_RUN_USER:-}"
 GITHUB="${LAUNCHER_GITHUB:-}"
 # Whose repo invitations the Clone page accepts. Empty = none.
 GITHUB_INVITES_FROM="${LAUNCHER_GITHUB_INVITES_FROM:-}"
-# The Schedules page and the job that runs them (macOS for now). Empty = off.
+# The Schedules page and the job that runs them. Empty = off.
 SCHEDULES="${LAUNCHER_SCHEDULES:-}"
 UNIT_DIR="$HOME/.config/systemd/user"
 UNIT="devbox-launcher.service"
@@ -162,6 +162,19 @@ install_systemd() {
     note "enabling the agents reaper timer and restore-at-boot unit"
     systemctl --user enable --now agents-reap.timer
     systemctl --user enable agents-restore.service
+
+    if [ -n "$SCHEDULES" ]; then
+        note "starting the schedules timer"
+        render "$REPO_DIR/agents-schedule.service.in" "$UNIT_DIR/agents-schedule.service"
+        install -m 0644 "$REPO_DIR/agents-schedule.timer" "$UNIT_DIR/agents-schedule.timer"
+        systemctl --user daemon-reload
+        systemctl --user enable --now agents-schedule.timer
+    elif [ -e "$UNIT_DIR/agents-schedule.timer" ]; then
+        note "removing the schedules timer"
+        systemctl --user disable --now agents-schedule.timer || true
+        rm -f "$UNIT_DIR/agents-schedule.service" "$UNIT_DIR/agents-schedule.timer"
+        systemctl --user daemon-reload
+    fi
 }
 
 # Reloading a job that was just unloaded can fail while launchd finishes
@@ -235,7 +248,6 @@ case "$(uname -s)" in
         install_launchd
         ;;
     *)
-        [ -z "$SCHEDULES" ] || warn "LAUNCHER_SCHEDULES only works on macOS for now; ignoring it"
         LOG_HINT="journalctl --user -u $UNIT -n 50"
         install_systemd
         ;;

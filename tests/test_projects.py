@@ -35,7 +35,7 @@ def make_source(tmp_path: Path) -> Path:
 
 
 def repo(url: str, slug: str = "thing") -> Repo:
-    return Repo(slug=slug, full_name=f"Owner/{slug}", description="", updated_on="", clone_url=url)
+    return Repo(slug=slug, full_name=f"Hooace/{slug}", description="", updated_on="", clone_url=url)
 
 
 def now(job):
@@ -79,8 +79,18 @@ def test_a_login_failure_says_what_to_run(tmp_path):
         return subprocess.CompletedProcess(
             cmd, 128, stdout="", stderr="fatal: could not read Username for 'https://github.com'")
     jobs = CloneJobs(run=run, spawn=now)
-    jobs.start(tmp_path, repo("https://github.com/Owner/thing.git"))
+    jobs.start(tmp_path, repo("https://github.com/Hooace/thing.git"))
     assert "gh auth setup-git" in jobs.status("thing").error
+
+
+def test_an_ssh_login_failure_says_what_to_check(tmp_path):
+    def run(cmd, **kw):
+        return subprocess.CompletedProcess(
+            cmd, 128, stdout="", stderr="git@github.com: Permission denied (publickey).\n"
+                                        "fatal: Could not read from remote repository.")
+    jobs = CloneJobs(run=run, spawn=now)
+    jobs.start(tmp_path, repo("git@github.com:Hooace/thing.git"))
+    assert "ssh -T git@github.com" in jobs.status("thing").error
 
 
 def test_clone_never_waits_for_a_password(tmp_path):
