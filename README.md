@@ -196,9 +196,13 @@ new one from the brief.
 
 - **Park** stops an idle agent and hides it behind the page's **Parked (N)**
   button; Start wakes it with its conversation. The reaper
-  (`agents-reap.timer`, every 30 minutes) parks agents idle for three days.
+  (`agents-reap.timer`, every 30 minutes) parks agents idle for six hours.
   Idle means no transcript writes, no typing and no output, and a session
   with a terminal attached is never touched.
+- **At most 8 agents run.** Starting a ninth parks the one idle the longest,
+  and the reaper and boot-time restore keep to the same number (restore brings
+  back the most recently used). Attached agents are never parked for it.
+  Scratch sessions don't count.
 - **Archive** (named agents, when stopped) removes the worktree and files the
   brief away. It **refuses**, and says why, when the worktree has uncommitted
   changes, commits on no remote, or a gitignored file at its top level (a
@@ -225,8 +229,20 @@ passes no flag, so `defaultMode` in `~/.claude/settings.json`, or else the
 CLI's own default, applies. `bypassPermissions` and `dontAsk` are deliberately
 not offered; see [docs/how-it-works.md](docs/how-it-works.md).
 
-Agents cost roughly 165 MB each while running; stopped and parked agents cost
-nothing.
+Agents cost roughly 165 MB each while running (more with their builds and
+tests); stopped and parked agents cost nothing.
+
+### Memory fence
+
+With `LAUNCHER_AGENTS_MEMORY_MAX=9G ./install.sh` (systemd only) the agents'
+tmux server runs in `agents.slice`, so every agent and everything it starts
+(builds, test suites, dev servers) shares that limit, plus
+`LAUNCHER_AGENTS_SWAP_MAX` of swap (default `1G`). At the limit the kernel
+kills the largest process *inside* the slice, normally a build, and the rest of
+the machine (sshd, the launcher) stays reachable. Size it to leave a few GB for
+the system. Without the option nothing changes; re-running `install.sh`
+without it removes the fence. See [docs/how-it-works.md](docs/how-it-works.md)
+for moving an already-running server into the slice.
 
 ## agentctl
 

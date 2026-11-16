@@ -125,9 +125,29 @@ Resume or restore brings that back and the brief is never consulted.
 **Park** stops an agent and hides it behind the page's **Parked (N)** button;
 Start wakes it with its conversation. `agents-reap.timer` runs
 `agentctl reap` ten minutes after boot and every 30 minutes: it parks agents
-idle for three days (counted from the last start at the earliest, so a woken
-agent gets three more days) and deletes scratch sessions idle for 12 hours. It
+idle for six hours (counted from the last start at the earliest, so a woken
+agent gets six more hours) and deletes scratch sessions idle for 12 hours. It
 never touches a session with a client attached.
+
+**At most `MAX_RUNNING` (8) named agents run.** `start` parks the longest-idle
+unattached agents to make room for the one it starts; `reap` parks the excess;
+`restore` resumes the most recently used first and parks the rest instead of
+starting them. Attached agents are never parked for the cap, so the count can
+exceed it while all of them are in use.
+
+**Memory fence** (`LAUNCHER_AGENTS_MEMORY_MAX`). `agents-tmux.service`
+(`Type=forking`, `Slice=agents.slice`, `KillMode=none`) runs
+`tmux -L agents start-server` at login/boot, before `agents-restore.service`;
+`tmux.conf` sets `exit-empty off` so the server outlives its last session and
+nothing else ever starts one. A server that was already running when the fence
+was installed stays outside it (install warns). Move it in when no agent is
+working:
+
+```bash
+tmux -u -L agents kill-server                  # stops every agent
+systemctl --user restart agents-tmux.service
+agentctl restore                               # the most recently used come back
+```
 
 tmux does not survive a reboot. `agents-restore.service` runs
 `agentctl restore` at boot and resumes every agent that was running when the

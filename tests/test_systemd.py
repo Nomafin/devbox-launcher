@@ -41,3 +41,42 @@ def test_install_sh_installs_the_timer_on_linux():
     script = (ROOT / "install.sh").read_text()
     assert "systemctl --user enable --now agents-schedule.timer" in script
     assert "only works on macOS" not in script
+
+
+# --- memory fence (LAUNCHER_AGENTS_MEMORY_MAX) --------------------------------
+
+def test_the_agents_tmux_server_unit_runs_in_the_agents_slice():
+    service = _unit("agents-tmux.service.in")["Service"]
+    assert service["Slice"] == "agents.slice"
+    assert service["Type"] == "forking"
+    assert "start-server" in service["ExecStart"]
+
+
+def test_stopping_the_tmux_server_unit_never_kills_the_agents():
+    # Its main process is the tmux server itself, so KillMode=process would
+    # kill every agent on a stop or restart; only none leaves them running.
+    assert _unit("agents-tmux.service.in")["Service"]["KillMode"] == "none"
+
+
+def test_the_agents_slice_takes_its_limits_from_install():
+    sl = _unit("agents.slice.in")["Slice"]
+    assert sl["MemoryMax"] == "@AGENTS_MEMORY_MAX@"
+    assert sl["MemorySwapMax"] == "@AGENTS_SWAP_MAX@"
+
+
+def test_restore_comes_after_the_tmux_server_unit():
+    unit = _unit("agents-restore.service.in")["Unit"]
+    assert "agents-tmux.service" in unit["After"]
+    assert unit["Wants"] == "agents-tmux.service"
+
+
+def test_the_tmux_server_survives_its_last_session():
+    # Otherwise the next start creates a new server outside the slice.
+    assert "set -s exit-empty off" in (ROOT / "agents" / "tmux.conf").read_text()
+
+
+def test_install_sh_installs_the_fence_only_when_asked():
+    script = (ROOT / "install.sh").read_text()
+    assert "LAUNCHER_AGENTS_MEMORY_MAX" in script
+    assert "systemctl --user enable --now agents-tmux.service" in script
+    assert "rm -f \"$UNIT_DIR/agents-tmux.service\" \"$UNIT_DIR/agents.slice\"" in script

@@ -25,6 +25,9 @@ GITHUB="${LAUNCHER_GITHUB:-}"
 GITHUB_INVITES_FROM="${LAUNCHER_GITHUB_INVITES_FROM:-}"
 # The Schedules page and the job that runs them. Empty = off.
 SCHEDULES="${LAUNCHER_SCHEDULES:-}"
+# Memory fence around the agents and all they run (systemd only), e.g. 9G.
+AGENTS_MEMORY_MAX="${LAUNCHER_AGENTS_MEMORY_MAX:-}"
+AGENTS_SWAP_MAX="${LAUNCHER_AGENTS_SWAP_MAX:-1G}"
 UNIT_DIR="$HOME/.config/systemd/user"
 UNIT="devbox-launcher.service"
 BIN_DIR="$HOME/.local/bin"
@@ -131,6 +134,8 @@ render() {
         -e "s|@GITHUB@|$GITHUB|g" \
         -e "s|@SCHEDULES@|$SCHEDULES|g" \
         -e "s|@GITHUB_INVITES_FROM@|$GITHUB_INVITES_FROM|g" \
+        -e "s|@AGENTS_MEMORY_MAX@|$AGENTS_MEMORY_MAX|g" \
+        -e "s|@AGENTS_SWAP_MAX@|$AGENTS_SWAP_MAX|g" \
         "$1" > "$2"
 }
 
@@ -156,12 +161,30 @@ install_systemd() {
     systemctl --user enable --now "$UNIT"
     systemctl --user restart "$UNIT"
 
-    # The reaper parks idle agents (3 days) and deletes idle scratch sessions
+    # The reaper parks idle agents (6 hours, at most 8 running) and deletes idle scratch sessions
     # (12 hours). Restore only runs at boot: starting it now would start every
     # agent marked active, which an install has no business doing.
     note "enabling the agents reaper timer and restore-at-boot unit"
     systemctl --user enable --now agents-reap.timer
     systemctl --user enable agents-restore.service
+
+    # Started, never restarted: a server already running outside the slice
+    # only moves in after `tmux -u -L agents kill-server` (docs/how-it-works.md).
+    if [ -n "$AGENTS_MEMORY_MAX" ]; then
+        note "fencing the agents in agents.slice ($AGENTS_MEMORY_MAX RAM, $AGENTS_SWAP_MAX swap)"
+        render "$REPO_DIR/agents.slice.in" "$UNIT_DIR/agents.slice"
+        render "$REPO_DIR/agents-tmux.service.in" "$UNIT_DIR/agents-tmux.service"
+        systemctl --user daemon-reload
+        systemctl --user enable --now agents-tmux.service
+        if ! systemd-cgls --user-unit agents-tmux.service 2>/dev/null | grep -q "tmux.*-L agents"; then
+            warn "the agents tmux server runs outside agents.slice; move it in when no agent is working: tmux -u -L agents kill-server && systemctl --user restart agents-tmux.service && agentctl restore"
+        fi
+    elif [ -e "$UNIT_DIR/agents-tmux.service" ]; then
+        note "removing the agents memory fence"
+        systemctl --user disable agents-tmux.service || true
+        rm -f "$UNIT_DIR/agents-tmux.service" "$UNIT_DIR/agents.slice"
+        systemctl --user daemon-reload
+    fi
 
     if [ -n "$SCHEDULES" ]; then
         note "starting the schedules timer"

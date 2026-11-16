@@ -2,7 +2,9 @@
 Description=Start the agents that were running before a reboot
 # Inert in the user manager (it has no network-online.target of its own); the
 # ExecStartPre below is what actually waits for the network.
-After=network-online.target
+After=network-online.target agents-tmux.service
+# Only exists with LAUNCHER_AGENTS_MEMORY_MAX; a missing Wants= is ignored.
+Wants=agents-tmux.service
 
 [Service]
 Type=oneshot

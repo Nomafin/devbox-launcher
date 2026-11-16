@@ -18,7 +18,11 @@ from .model import (ACTIVE, AGENT, ARCHIVED, MAIN, PARKED, SCRATCH, STOPPED, Age
                     AgentError, check_mode, check_name, split_key)
 from .places import Place
 
-PARK_AFTER = 3 * 86400
+PARK_AFTER = 6 * 3600
+# At most this many agents run at once; starting one more parks the agent idle
+# the longest. Attached agents are never parked for it, so the cap can be
+# exceeded while someone is using them all. Scratch sessions don't count.
+MAX_RUNNING = 8
 # tmux stamps a new session's activity with its creation time, and a resumed
 # conversation redraws its history in the first seconds. Neither is anyone
 # using the agent, so tmux activity this close to the start does not count.
@@ -184,12 +188,32 @@ def _settle(ctx: Ctx, agent: Agent) -> str | None:
     return None
 
 
+
+def _make_room(ctx: Ctx, agents: dict, starting: Agent | None = None) -> list[str]:
+    """Park the longest-idle unattached agents until fewer than MAX_RUNNING
+    run (counting the one being started, if any)."""
+    live = runtime.sessions(ctx.home, ctx.run)
+    running = [a for a in agents.values()
+               if a.kind == AGENT and a is not starting
+               and (s := live.get(a.display)) is not None and not s.dead]
+    excess = len(running) - (MAX_RUNNING - (1 if starting is not None else 0))
+    if excess <= 0:
+        return []
+    candidates = sorted((a for a in running if not live[a.display].attached),
+                        key=lambda a: _idle_since(ctx, a, live[a.display]))
+    parked = []
+    for a in candidates[:excess]:
+        _stop(ctx, a, PARKED)
+        parked.append(f"parked {a.display}")
+    return parked
+
 def _start(ctx: Ctx, agents: dict, agent: Agent, *, fresh: bool, force: bool,
            repair: bool, extra=()) -> Agent:
     live = runtime.sessions(ctx.home, ctx.run).get(agent.display)
     if live is not None and not live.dead and not fresh:
         agent.state = ACTIVE
         return agent
+    _make_room(ctx, agents, agent)
     if (fresh and not force and agent.kind == AGENT and agent.session_id is not None
             and briefs.is_stale(briefs.path(ctx.root, agent), _activity(ctx, agent, live))):
         raise AgentError(AgentError.STALE_BRIEF,
@@ -403,6 +427,7 @@ def reap(ctx: Ctx, park_after=PARK_AFTER, scratch_after=SCRATCH_AFTER) -> list[s
             elif agent.kind == AGENT and agent.state in (ACTIVE, STOPPED) and idle >= park_after:
                 _stop(ctx, agent, PARKED)
                 done.append(f"parked {agent.display}")
+        done += _make_room(ctx, agents)
     return done
 
 
@@ -410,7 +435,12 @@ def restore(ctx: Ctx) -> list[str]:
     done = []
     with registry.transaction(ctx.root) as agents:
         live = runtime.sessions(ctx.home, ctx.run)
-        for agent in sorted(agents.values(), key=_order):
+        running = sum(1 for a in agents.values() if a.kind == AGENT
+                      and (s := live.get(a.display)) is not None and not s.dead)
+        # Most recently used first, so the cap keeps those and parks the rest.
+        order = sorted(agents.values(), key=_order)
+        order.sort(key=lambda a: _idle_since(ctx, a, live.get(a.display)), reverse=True)
+        for agent in order:
             if agent.kind != AGENT or agent.state != ACTIVE:
                 continue
             s = live.get(agent.display)
@@ -420,6 +450,11 @@ def restore(ctx: Ctx) -> list[str]:
                 _clear(ctx, agents, agent)
                 done.append(f"cleared {agent.display}")
                 continue
+            if running >= MAX_RUNNING:
+                agent.state = PARKED            # not running: nothing to stop
+                done.append(f"parked {agent.display}")
+                continue
+            running += 1
             try:
                 _start(ctx, agents, agent, fresh=False, force=True, repair=False)
                 done.append(f"restored {agent.display}")

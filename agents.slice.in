@@ -1,0 +1,12 @@
+# Memory fence around the named agents: their tmux server, every Claude process
+# and everything those start (builds, test suites, dev servers). Installed when
+# LAUNCHER_AGENTS_MEMORY_MAX is set. At the limit the kernel OOM-kills the
+# largest process inside this slice only, normally a build, so sshd and the
+# launcher stay up. Swap is kept small so an overrun fails fast, not by thrashing.
+[Unit]
+Description=Named Claude agents and their workloads
+
+[Slice]
+MemoryAccounting=yes
+MemoryMax=@AGENTS_MEMORY_MAX@
+MemorySwapMax=@AGENTS_SWAP_MAX@

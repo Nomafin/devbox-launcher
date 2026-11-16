@@ -412,3 +412,88 @@ def test_an_existing_worktree_is_excluded_on_its_next_start(world):
     exclude.write_text("# mine\n")
     service.start(world.ctx, world.place, "drafts")
     assert exclude.read_text() == "# mine\n/.claude/worktrees/\n"
+
+
+# --- memory guardrails: park sooner, cap how many run ------------------------
+
+HOUR = 3600
+
+
+def test_reap_parks_an_agent_idle_for_six_hours(world):
+    service.start(world.ctx, world.place, MAIN)
+    world.clock["t"] += 6 * HOUR + 1
+    assert service.reap(world.ctx) == ["parked notes/main"]
+
+
+def test_reap_keeps_an_agent_idle_for_five_hours(world):
+    service.start(world.ctx, world.place, MAIN)
+    world.clock["t"] += 5 * HOUR
+    assert service.reap(world.ctx) == []
+    assert "notes/main" in world.tmux.sessions
+
+
+def _start_many(world, n):
+    """n running agents, started a minute apart: a1 is the longest idle."""
+    names = [f"a{i}" for i in range(1, n + 1)]
+    for name in names:
+        service.start(world.ctx, world.place, name, create=True)
+        world.clock["t"] += 60
+    return names
+
+
+def _running(world):
+    return sorted(world.tmux.sessions)
+
+
+def test_starting_a_ninth_agent_parks_the_longest_idle(world):
+    _start_many(world, 8)
+    service.start(world.ctx, world.place, "new", create=True)
+    agents = registry.load(world.ctx.root)
+    assert agents["notes/a1"].state == PARKED
+    assert "notes/a1" not in world.tmux.sessions
+    assert len(world.tmux.sessions) == 8
+    assert "notes/new" in world.tmux.sessions
+
+
+def test_the_cap_skips_attached_agents(world):
+    _start_many(world, 8)
+    world.tmux.sessions["notes/a1"]["attached"] = True
+    service.start(world.ctx, world.place, "new", create=True)
+    assert "notes/a1" in world.tmux.sessions
+    assert registry.load(world.ctx.root)["notes/a2"].state == PARKED
+
+
+def test_the_cap_never_blocks_a_start_when_every_agent_is_attached(world):
+    _start_many(world, 8)
+    for s in world.tmux.sessions.values():
+        s["attached"] = True
+    service.start(world.ctx, world.place, "new", create=True)
+    assert len(world.tmux.sessions) == 9
+
+
+def test_restarting_an_already_running_agent_parks_nothing(world):
+    _start_many(world, 8)
+    service.start(world.ctx, world.place, "a1")
+    assert len(world.tmux.sessions) == 8
+    assert all(a.state == ACTIVE for a in registry.load(world.ctx.root).values())
+
+
+def test_reap_brings_the_running_count_down_to_the_cap(world, monkeypatch):
+    # Ten running, e.g. started before the cap existed.
+    monkeypatch.setattr(service, "MAX_RUNNING", 100)
+    _start_many(world, 10)
+    monkeypatch.setattr(service, "MAX_RUNNING", 8)
+    done = service.reap(world.ctx)
+    assert done == ["parked notes/a1", "parked notes/a2"]
+    assert len(world.tmux.sessions) == 8
+
+
+def test_restore_restarts_the_most_recently_used_and_parks_the_rest(world, monkeypatch):
+    monkeypatch.setattr(service, "MAX_RUNNING", 100)
+    _start_many(world, 10)                  # a10 used last, a1 first
+    world.tmux.sessions.clear()             # reboot
+    monkeypatch.setattr(service, "MAX_RUNNING", 8)
+    service.restore(world.ctx)
+    assert _running(world) == sorted(f"notes/a{i}" for i in range(3, 11))
+    agents = registry.load(world.ctx.root)
+    assert (agents["notes/a1"].state, agents["notes/a2"].state) == (PARKED, PARKED)

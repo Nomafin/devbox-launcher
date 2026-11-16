@@ -1,0 +1,19 @@
+[Unit]
+Description=tmux server for the named agents (socket "agents"), inside agents.slice
+# Owns the server so it lands in agents.slice, under its memory limit. A server
+# started by anything else (restore, agentctl, the launcher) would sit outside.
+Before=agents-restore.service
+
+[Service]
+Type=forking
+Slice=agents.slice
+# tmux.conf sets exit-empty off, so the server outlives its last session.
+ExecStart=/usr/bin/env tmux -u -L agents -f %h/.config/agents/tmux.conf start-server
+# The main process is the tmux server: never signal it on a stop or restart
+# (KillMode=process would kill every agent). Stopping it is a deliberate
+# `tmux -L agents kill-server`.
+KillMode=none
+RemainAfterExit=yes
+
+[Install]
+WantedBy=default.target
