@@ -116,9 +116,17 @@ conversation's transcript, typing in tmux and pane output after the first
 minute of a start (a resumed conversation redraws its history, which is not
 use).
 
-A new conversation is always Fresh, not `/clear` inside the agent: after
-`/clear` the agent's recorded conversation is still the old one, so a later
-Resume or restore brings that back and the brief is never consulted.
+**`/clear` inside an agent.** Every agent starts with `--settings
+~/.config/agents/claude-settings.json`, which registers a `SessionStart` hook
+for `clear`: `agentctl hook session-start` (`launcher/agents/clearhook.py`).
+It finds the previous conversation (the newest other transcript in the
+project directory whose title is the agent's name); if the brief is stale
+against it, a headless `claude -p --resume <previous> --no-session-persistence`
+runs `/handoff <brief>` (up to four minutes; without persistence it leaves no
+transcript behind). It then returns the brief as the new conversation's
+context, with a warning if the handoff failed. The hook never fails the
+start. `start` and `reap` follow the agent to its newest titled transcript,
+so Resume and restore pick up the conversation after a `/clear`.
 
 ## Parking, the reaper and restore
 

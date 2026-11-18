@@ -104,11 +104,11 @@ at `$AGENT_BRIEF` with sections Mission/State/Next steps/Gotchas" instead.
 
 ## A resumed agent comes back with the old conversation
 
-Someone used `/clear` inside it. `/clear` starts a new conversation in the
-same process, but the agent's recorded conversation is still the old one, so
-Resume and restore bring that back and the brief is never consulted. Start a
-new conversation with **Fresh conversation** (`agentctl start … --fresh`)
-instead.
+The launcher follows `/clear` to the newest transcript titled with the
+agent's name, in the directory of the recorded one. If the new conversation
+was started some other way (`claude` without `-n <project>/<name>`, or in
+another directory), it has no such title: start it with **Fresh conversation**
+(`agentctl start … --fresh`), or resume the right id by hand.
 
 ## Worktree missing
 

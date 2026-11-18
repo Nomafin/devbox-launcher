@@ -57,6 +57,8 @@ def _parser() -> argparse.ArgumentParser:
     actions.add_parser("tick", help="start whatever is due (the timer runs this)")
     for name in ("rm", "run", "pause", "resume"):
         actions.add_parser(name).add_argument("target", help="<project>/<name>")
+    hook = sub.add_parser("hook", help="Claude Code hooks (agents run these, not people)")
+    hook.add_argument("event", choices=["session-start"])
     imp = sub.add_parser("import", help="one-time migration of old sessions")
     imp.add_argument("--dry-run", action="store_true")
     return p
@@ -192,6 +194,9 @@ def main(argv=None, ctx=None) -> int:
         i = argv.index("--")
         argv, extra = argv[:i], argv[i + 1:]
     args = _parser().parse_args(argv)
+    if args.cmd == "hook":
+        from . import clearhook
+        return clearhook.main()
     ctx = ctx or service.Ctx.default()
     try:
         payload, text = _run(ctx, args, extra)

@@ -187,10 +187,11 @@ brief so the new conversation knows what the old one did. If the brief has not
 been updated since the agent's last activity, Fresh refuses (*the brief is
 stale*) and the button becomes **Fresh anyway** for one tap.
 
-Always start over with **Fresh**, never **`/clear`** inside the agent. After
-`/clear` the agent's recorded conversation is still the old one, so the next
-Resume (or a reboot) brings the old conversation back, and nothing seeds the
-new one from the brief.
+**`/clear`** inside the agent works too, from the terminal or the Claude app.
+A hook the launcher registers for its agents runs `/handoff` on the old
+conversation in the background if the brief is stale (about a minute before
+the new conversation is ready), then loads the brief into the new one. Resume
+and restore follow the agent to its newest conversation.
 
 ### Parking and archiving
 

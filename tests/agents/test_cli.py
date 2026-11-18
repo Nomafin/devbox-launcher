@@ -77,3 +77,15 @@ def test_resolve_passes_other_errors_through(world, capsys, monkeypatch):
     code, out, err = run(world, capsys, "resolve", "--dir", str(world.repo), "drafts")
     assert (code, out) == (AgentError.REFUSED, "")
     assert err == "agentctl: nope\n"
+
+
+def test_hook_ignores_anything_but_a_clear(world, capsys, monkeypatch):
+    import io
+    monkeypatch.setattr("sys.stdin", io.StringIO('{"source": "startup"}'))
+    assert run(world, capsys, "hook", "session-start")[:2] == (0, "")
+
+
+def test_hook_never_fails_the_session_start(world, capsys, monkeypatch):
+    import io
+    monkeypatch.setattr("sys.stdin", io.StringIO("not json"))
+    assert run(world, capsys, "hook", "session-start")[:2] == (0, "")

@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Callable
 
 from .. import config, trust as _trust, worktrees
-from . import briefs, places, registry, runtime
+from . import briefs, clearhook, places, registry, runtime
 from .model import (ACTIVE, AGENT, ARCHIVED, MAIN, PARKED, SCRATCH, STOPPED, Agent,
                     AgentError, check_mode, check_name, split_key)
 from .places import Place
@@ -245,15 +245,16 @@ def _start(ctx: Ctx, agents: dict, agent: Agent, *, fresh: bool, force: bool,
             seed = briefs.write_seed(ctx.root, agent)
     ctx.trust(agent.workdir)
     env = {"AGENT_NAME": agent.key}
-    brief_dir = None
+    brief_dir = settings = None
     if agent.kind == AGENT:
         brief = briefs.ensure(ctx.root, agent)
         env["AGENT_BRIEF"] = str(brief)
         brief_dir = brief.parent
+        settings = clearhook.write_settings(ctx.root)
     if agent.has_worktree:
         worktrees.exclude(agent.cwd, run=ctx.git)
     command = runtime.claude_command(agent, fresh=not resume, seed=seed, extra=extra,
-                                     brief_dir=brief_dir)
+                                     brief_dir=brief_dir, settings=settings)
     try:
         runtime.start(ctx.home, agent.display, agent.workdir, command, env, ctx.run)
         why = _settle(ctx, agent)

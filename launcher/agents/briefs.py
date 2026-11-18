@@ -20,9 +20,10 @@ Your brief is at {brief} (also in $AGENT_BRIEF). It is how the next
 conversation for this agent will know what you know, so keep it current:
 update it when you finish a meaningful piece of work, and rewrite it fully
 when asked to hand off (/handoff). Keep its four sections: Mission, State,
-Next steps, Gotchas. A new conversation for this agent is started with Fresh
-(the launcher's Fresh conversation, or `agentctl start <project>/<name> --fresh`), not /clear: if
-the user wants to start over, hand off and point them there.
+Next steps, Gotchas. A new conversation for this agent starts with /clear
+(the old conversation is handed off into the brief and the brief loaded
+automatically) or with Fresh (the launcher's Fresh conversation, or
+`agentctl start <project>/<name> --fresh`).
 
 The brief as of the start of this conversation:
 

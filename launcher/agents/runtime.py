@@ -171,7 +171,7 @@ def answer_trust_prompt(home, name: str, run: Runner) -> None:
 
 
 def claude_command(agent: Agent, *, fresh: bool, seed: Path | None, extra=(),
-                   brief_dir: Path | None = None) -> str:
+                   brief_dir: Path | None = None, settings: Path | None = None) -> str:
     # --no-chrome: on a machine with the Claude in Chrome extension, Claude can
     # otherwise stop at a question before Remote Control connects, and nobody
     # at a phone can answer it.
@@ -181,6 +181,9 @@ def claude_command(agent: Agent, *, fresh: bool, seed: Path | None, extra=(),
     # answer. Never last: --add-dir takes every word after it, a prompt included.
     if brief_dir is not None:
         parts += ["--add-dir", str(brief_dir)]
+    # Hooks for this agent only (the /clear handoff), on top of the user's own.
+    if settings is not None:
+        parts += ["--settings", str(settings)]
     if fresh:
         parts += ["--session-id", agent.session_id]
         if seed is not None:
@@ -224,17 +227,26 @@ def current_session(home, session_id: str | None, name: str) -> str | None:
             since = recorded.stat().st_mtime
         except OSError:
             continue
-        newer = []
-        for f in recorded.parent.glob("*.jsonl"):
-            try:
-                mtime = f.stat().st_mtime
-            except OSError:
-                continue
-            if mtime > since and _titled(f, name):
-                newer.append((mtime, f.stem))
-        if newer:
-            return max(newer)[1]
+        found = newest_titled(recorded.parent, name, after=since)
+        if found is not None:
+            return found[1]
     return session_id
+
+
+def newest_titled(directory: Path, name: str, *, after: float = 0.0,
+                  exclude: str | None = None) -> tuple[float, str] | None:
+    """(mtime, session id) of the newest transcript named after the agent."""
+    best = None
+    for f in Path(directory).glob("*.jsonl"):
+        if f.stem == exclude:
+            continue
+        try:
+            mtime = f.stat().st_mtime
+        except OSError:
+            continue
+        if mtime > after and (best is None or mtime > best[0]) and _titled(f, name):
+            best = (mtime, f.stem)
+    return best
 
 
 def transcript_mtime(home, session_id: str | None) -> float:

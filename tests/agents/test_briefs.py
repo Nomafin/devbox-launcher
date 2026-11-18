@@ -57,5 +57,6 @@ def test_archive_moves_brief(tmp_path):
     assert briefs.archive(tmp_path, agent(), "20261016") is None
 
 
-def test_preamble_says_fresh_not_clear():
-    assert "--fresh" in briefs.PREAMBLE and "not /clear" in briefs.PREAMBLE
+def test_preamble_allows_clear_and_fresh():
+    assert "--fresh" in briefs.PREAMBLE and "/clear" in briefs.PREAMBLE
+    assert "not /clear" not in briefs.PREAMBLE

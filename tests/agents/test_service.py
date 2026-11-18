@@ -530,3 +530,15 @@ def test_reap_follows_a_clear(world):
     _cleared(world, a, "after-clear", 60)
     assert service.reap(world.ctx) == []
     assert registry.load(world.ctx.root)["notes/main"].session_id == "after-clear"
+
+
+def test_agents_start_with_the_clear_hook(world):
+    service.start(world.ctx, world.place, MAIN)
+    cmd = argv(world, "notes/main")
+    settings = cmd[cmd.index("--settings") + 1]
+    assert "SessionStart" in open(settings).read()
+
+
+def test_scratch_sessions_start_without_the_clear_hook(world):
+    a = service.scratch(world.ctx, world.place)
+    assert "--settings" not in argv(world, a.display)

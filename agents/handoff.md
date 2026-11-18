@@ -25,5 +25,5 @@ What cost time and would again: commands, paths, traps, decisions and why.
 
 Be specific (file paths, commands, PR numbers), keep it under about 60 lines,
 then answer with one line saying the brief is updated, and that the next
-conversation is started with Fresh (the launcher's Fresh conversation, or
-`agentctl start <project>/<name> --fresh`), not `/clear`.
+conversation can start with `/clear` or with Fresh (the launcher's Fresh
+conversation, or `agentctl start <project>/<name> --fresh`).

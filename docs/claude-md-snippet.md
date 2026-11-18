@@ -27,8 +27,9 @@ would sidestep the permission check.
 Sessions here are named agents (`<project>/<name>`, e.g. `notes/drafts`).
 Each has a brief at `$AGENT_BRIEF`: keep it current as you finish meaningful
 work, and rewrite it fully when the user runs /handoff. A new conversation for
-an agent is started with Fresh (the launcher's **Fresh conversation**, or
-`agentctl start <project>/<name> --fresh`), not /clear. When work needs its
+an agent is started with /clear (the old one is handed off into the brief
+automatically) or Fresh (the launcher's **Fresh conversation**, or
+`agentctl start <project>/<name> --fresh`). When work needs its
 own branch and checkout, the user creates a new agent (**New agent** on the
 project's row in the launcher, or `agentctl new <project>/<name>`); it works
 in `.claude/worktrees/<name>` on branch `agent/<name>`.

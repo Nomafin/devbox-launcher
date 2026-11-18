@@ -205,3 +205,10 @@ def test_current_session_ignores_other_agents_and_older_transcripts(tmp_path):
 def test_current_session_without_a_transcript(tmp_path):
     assert runtime.current_session(tmp_path, "sid-1", "notes/main") == "sid-1"
     assert runtime.current_session(tmp_path, None, "notes/main") is None
+
+
+def test_settings_are_passed_before_the_prompt(tmp_path):
+    argv = shlex.split(runtime.claude_command(agent(), fresh=True, seed=None, extra=["the prompt"],
+                                              settings=tmp_path / "h.json"))
+    assert argv[argv.index("--settings") + 1] == str(tmp_path / "h.json")
+    assert argv[-1] == "the prompt"
