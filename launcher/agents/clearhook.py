@@ -52,7 +52,7 @@ def _headless(argv: list, cwd: str, env: dict) -> bool:
 def handoff_command(previous: str, brief: Path) -> list:
     return ["claude", "-p", "--resume", previous, "--no-session-persistence",
             "--add-dir", str(brief.parent), "--permission-mode", "acceptEdits",
-            "--allowedTools", "Read,Write,Edit", f"/handoff {brief}"]
+            "--allowedTools", "Read,Write,Edit", "--", f"/handoff {brief}"]
 
 
 def run(event: dict, env: Mapping, handoff: Handoff = _headless) -> str | None:

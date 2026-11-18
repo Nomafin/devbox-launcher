@@ -72,7 +72,9 @@ def test_clear_hands_off_the_previous_conversation_then_loads_the_brief(setup):
     assert argv[argv.index("--resume") + 1] == "prev"
     assert "--no-session-persistence" in argv           # leaves no transcript behind
     assert argv[argv.index("--add-dir") + 1] == str(brief.parent)
-    assert argv[-1] == f"/handoff {brief}"
+    # --add-dir and --allowedTools take every word after them: the prompt
+    # comes after "--", or claude reads it as a tool name.
+    assert argv[-2:] == ["--", f"/handoff {brief}"]
     assert cwd == "/work" and henv[clearhook.GUARD] == "1"
     assert "handed off" in ctx and str(brief) in ctx and NAME in ctx
 
