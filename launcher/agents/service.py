@@ -120,6 +120,11 @@ def _tmux_activity(live: runtime.Session | None) -> float:
                       if t > live.created + START_GRACE), default=0))
 
 
+def _follow_clear(ctx: Ctx, agent: Agent) -> None:
+    """Record the conversation a /clear moved the agent to."""
+    agent.session_id = runtime.current_session(ctx.home, agent.session_id, agent.display)
+
+
 def _activity(ctx: Ctx, agent: Agent, live: runtime.Session | None) -> float:
     """Real use, which a brief can have missed. A start is not: created is the
     floor, the rest is the agent being used."""
@@ -214,6 +219,7 @@ def _start(ctx: Ctx, agents: dict, agent: Agent, *, fresh: bool, force: bool,
         agent.state = ACTIVE
         return agent
     _make_room(ctx, agents, agent)
+    _follow_clear(ctx, agent)
     if (fresh and not force and agent.kind == AGENT and agent.session_id is not None
             and briefs.is_stale(briefs.path(ctx.root, agent), _activity(ctx, agent, live))):
         raise AgentError(AgentError.STALE_BRIEF,
@@ -410,6 +416,7 @@ def reap(ctx: Ctx, park_after=PARK_AFTER, scratch_after=SCRATCH_AFTER) -> list[s
         now = ctx.now()
         for agent in list(agents.values()):
             s = live.get(agent.display)
+            _follow_clear(ctx, agent)
             agent.last_active = _activity(ctx, agent, s)
             if s is not None and s.attached:
                 continue

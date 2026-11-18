@@ -5,6 +5,7 @@ session that died on start, so its error can be read; everything that starts
 one clears such a corpse first.
 """
 
+import json
 import re
 import shlex
 import subprocess
@@ -191,6 +192,49 @@ def claude_command(agent: Agent, *, fresh: bool, seed: Path | None, extra=(),
     if fresh:
         parts += list(extra)
     return shlex.join(parts)
+
+
+def _titled(path: Path, name: str, lines: int = 20) -> bool:
+    """Whether a transcript is named after the agent. Claude writes the -n name
+    (custom-title, agent-name) at the top of every conversation, /clear's too."""
+    try:
+        with path.open(errors="replace") as f:
+            for _, line in zip(range(lines), f):
+                try:
+                    entry = json.loads(line)
+                except ValueError:
+                    continue
+                if isinstance(entry, dict) and name in (entry.get("customTitle"),
+                                                        entry.get("agentName")):
+                    return True
+    except OSError:
+        pass
+    return False
+
+
+def current_session(home, session_id: str | None, name: str) -> str | None:
+    """The conversation the agent is in now. /clear starts a new one in the
+    same project directory without telling the launcher, so resuming the
+    recorded id would go back to the conversation before it: follow the newest
+    transcript named after the agent that is newer than the recorded one."""
+    if not session_id:
+        return session_id
+    for recorded in (Path(home) / ".claude" / "projects").glob(f"*/{session_id}.jsonl"):
+        try:
+            since = recorded.stat().st_mtime
+        except OSError:
+            continue
+        newer = []
+        for f in recorded.parent.glob("*.jsonl"):
+            try:
+                mtime = f.stat().st_mtime
+            except OSError:
+                continue
+            if mtime > since and _titled(f, name):
+                newer.append((mtime, f.stem))
+        if newer:
+            return max(newer)[1]
+    return session_id
 
 
 def transcript_mtime(home, session_id: str | None) -> float:

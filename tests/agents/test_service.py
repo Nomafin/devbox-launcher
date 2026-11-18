@@ -497,3 +497,36 @@ def test_restore_restarts_the_most_recently_used_and_parks_the_rest(world, monke
     assert _running(world) == sorted(f"notes/a{i}" for i in range(3, 11))
     agents = registry.load(world.ctx.root)
     assert (agents["notes/a1"].state, agents["notes/a2"].state) == (PARKED, PARKED)
+
+
+def _cleared(world, a, sid, age):
+    """What /clear leaves behind: a new transcript named after the agent, next
+    to the one the launcher recorded."""
+    d = world.home / ".claude" / "projects" / "-notes"
+    d.mkdir(parents=True, exist_ok=True)
+    old = d / f"{a.session_id}.jsonl"
+    old.write_text("{}\n")
+    t = world.clock["t"]
+    os.utime(old, (t - age - 60, t - age - 60))
+    new = d / f"{sid}.jsonl"
+    new.write_text(f'{{"type":"custom-title","customTitle":"{a.display}","sessionId":"{sid}"}}\n')
+    os.utime(new, (t - age, t - age))
+
+
+def test_resume_follows_a_clear(world):
+    a = service.start(world.ctx, world.place, MAIN)
+    world.clock["t"] += 3600
+    _cleared(world, a, "after-clear", 60)
+    service.stop(world.ctx, world.place, MAIN)
+    service.start(world.ctx, world.place, MAIN)
+    cmd = argv(world, "notes/main")
+    assert cmd[cmd.index("--resume") + 1] == "after-clear"
+    assert registry.load(world.ctx.root)["notes/main"].session_id == "after-clear"
+
+
+def test_reap_follows_a_clear(world):
+    a = service.start(world.ctx, world.place, MAIN)
+    world.clock["t"] += service.PARK_AFTER + 1
+    _cleared(world, a, "after-clear", 60)
+    assert service.reap(world.ctx) == []
+    assert registry.load(world.ctx.root)["notes/main"].session_id == "after-clear"

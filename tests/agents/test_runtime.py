@@ -170,3 +170,38 @@ def test_brief_dir_is_added_where_it_cannot_swallow_a_prompt(tmp_path):
     assert argv[argv.index("--add-dir") + 1] == str(tmp_path)
     assert argv[argv.index("--add-dir") + 2].startswith("--")
     assert argv[-1] == "the prompt"
+
+
+def _transcript(d, sid, title, mtime):
+    f = d / f"{sid}.jsonl"
+    f.write_text(
+        f'{{"type":"custom-title","customTitle":"{title}","sessionId":"{sid}"}}\n'
+        f'{{"type":"agent-name","agentName":"{title}","sessionId":"{sid}"}}\n'
+        '{"type":"user","message":{"content":"hi"}}\n')
+    os.utime(f, (mtime, mtime))
+    return f
+
+
+def test_current_session_follows_a_clear(tmp_path):
+    d = tmp_path / ".claude" / "projects" / "-p"
+    d.mkdir(parents=True)
+    _transcript(d, "sid-1", "notes/main", 5000.0)
+    _transcript(d, "sid-2", "notes/main", 6000.0)
+    _transcript(d, "sid-3", "notes/main", 7000.0)
+    assert runtime.current_session(tmp_path, "sid-1", "notes/main") == "sid-3"
+
+
+def test_current_session_ignores_other_agents_and_older_transcripts(tmp_path):
+    d = tmp_path / ".claude" / "projects" / "-p"
+    d.mkdir(parents=True)
+    _transcript(d, "old", "notes/main", 4000.0)
+    _transcript(d, "sid-1", "notes/main", 5000.0)
+    _transcript(d, "other", "notes/drafts", 6000.0)
+    (d / "plain.jsonl").write_text('{"type":"user"}\n')
+    os.utime(d / "plain.jsonl", (6500.0, 6500.0))
+    assert runtime.current_session(tmp_path, "sid-1", "notes/main") == "sid-1"
+
+
+def test_current_session_without_a_transcript(tmp_path):
+    assert runtime.current_session(tmp_path, "sid-1", "notes/main") == "sid-1"
+    assert runtime.current_session(tmp_path, None, "notes/main") is None
