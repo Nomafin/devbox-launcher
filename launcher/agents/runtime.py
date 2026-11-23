@@ -16,6 +16,8 @@ from typing import Callable
 from .model import Agent, AgentError
 
 SOCKET = "agents"
+# A first prompt travels on the tmux command line, whose message size is limited.
+MAX_PROMPT = 8000
 TIMEOUT = 10.0
 Runner = Callable[[list[str]], subprocess.CompletedProcess]
 
@@ -171,7 +173,8 @@ def answer_trust_prompt(home, name: str, run: Runner) -> None:
 
 
 def claude_command(agent: Agent, *, fresh: bool, seed: Path | None, extra=(),
-                   brief_dir: Path | None = None, settings: Path | None = None) -> str:
+                   brief_dir: Path | None = None, settings: Path | None = None,
+                   prompt: str | None = None) -> str:
     # --no-chrome: on a machine with the Claude in Chrome extension, Claude can
     # otherwise stop at a question before Remote Control connects, and nobody
     # at a phone can answer it.
@@ -194,6 +197,10 @@ def claude_command(agent: Agent, *, fresh: bool, seed: Path | None, extra=(),
         parts += ["--permission-mode", agent.mode]
     if fresh:
         parts += list(extra)
+    # The first message, fresh or resumed. After "--", so no option before it
+    # (--add-dir, --allowedTools in extra) can take it as a value.
+    if prompt is not None:
+        parts += ["--", prompt]
     return shlex.join(parts)
 
 

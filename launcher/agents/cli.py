@@ -7,11 +7,12 @@ the right follow-up question (create? start fresh anyway? recreate?).
 
 import argparse
 import json
+import os
 import sys
 from dataclasses import asdict
 from pathlib import Path
 
-from . import schedule, service
+from . import policy, schedule, service
 from .model import MAIN, SEP, AgentError
 
 TARGETED = ("resolve", "new", "start", "stop", "park", "archive", "mode", "brief-status")
@@ -32,11 +33,15 @@ def _parser() -> argparse.ArgumentParser:
         sp.add_argument("--dir", help="a directory inside the project")
         if name == "new":
             sp.add_argument("--mode")
+        if name in ("new", "start"):
+            sp.add_argument("--brief-file", help="the new agent's brief (with --create for start)")
         if name == "start":
             sp.add_argument("--fresh", action="store_true")
             sp.add_argument("--force", action="store_true", help="fresh even if the brief is stale")
             sp.add_argument("--create", action="store_true", help="create the agent if missing")
             sp.add_argument("--repair", action="store_true", help="recreate a missing worktree")
+            sp.add_argument("--prompt", help="the first message; refused if the agent is running")
+            sp.add_argument("--prompt-file", help="the first message, from a file")
         if name == "mode":
             sp.add_argument("--set", dest="mode", required=True)
     sc = sub.add_parser("scratch", help="start a scratch session")
@@ -94,14 +99,27 @@ def _ls_text(ctx, vs) -> str:
     return "\n".join(lines)
 
 
+def _read(path: str | None, what: str) -> str | None:
+    if path is None:
+        return None
+    try:
+        return Path(path).read_text()
+    except OSError as exc:
+        raise AgentError(AgentError.INVALID, f"could not read the {what}: {exc}") from exc
+
+
+def _prompt(args, required: bool) -> str | None:
+    if args.prompt is not None and args.prompt_file is not None:
+        raise AgentError(AgentError.INVALID, "give --prompt or --prompt-file, not both")
+    if required and args.prompt is None and args.prompt_file is None:
+        raise AgentError(AgentError.INVALID, "give --prompt or --prompt-file")
+    return args.prompt if args.prompt is not None else _read(args.prompt_file, "prompt")
+
+
 def _schedule(ctx, args) -> tuple[object, str]:
+    policy.command(ctx.caller, f"schedule {args.action}")
     if args.action == "add":
-        if bool(args.prompt) == bool(args.prompt_file):
-            raise AgentError(AgentError.INVALID, "give --prompt or --prompt-file")
-        try:
-            prompt = args.prompt or Path(args.prompt_file).read_text()
-        except OSError as exc:
-            raise AgentError(AgentError.INVALID, f"could not read the prompt: {exc}") from exc
+        prompt = _prompt(args, required=True)
         s = schedule.add(ctx, args.target, times=args.at, prompt=prompt,
                          mode=args.mode, model=args.model)
         return asdict(s), f"{s.key} at {', '.join(s.times)}"
@@ -126,6 +144,8 @@ def _schedule(ctx, args) -> tuple[object, str]:
 
 def _run(ctx, args, extra) -> tuple[object, str]:
     """(json payload, text output) for one command."""
+    policy.command(ctx.caller, args.cmd)
+    policy.extra(ctx.caller, extra)
     if args.cmd == "schedule":
         return _schedule(ctx, args)
     if args.cmd == "ls":
@@ -168,10 +188,12 @@ def _run(ctx, args, extra) -> tuple[object, str]:
             raise
         return agent.to_dict(), agent.display
     if args.cmd == "new":
-        a = service.new(ctx, place, name, args.mode)
+        a = service.new(ctx, place, name, args.mode, brief=_read(args.brief_file, "brief"))
     elif args.cmd == "start":
         a = service.start(ctx, place, name, fresh=args.fresh, force=args.force,
-                          create=args.create, repair=args.repair, extra=extra)
+                          create=args.create, repair=args.repair, extra=extra,
+                          prompt=_prompt(args, required=False),
+                          brief=_read(args.brief_file, "brief"))
     elif args.cmd == "stop":
         a = service.stop(ctx, place, name)
         return (a.to_dict() if a else {}), ""
@@ -199,6 +221,8 @@ def main(argv=None, ctx=None) -> int:
         return clearhook.main()
     ctx = ctx or service.Ctx.default()
     try:
+        if ctx.caller is None:
+            ctx.caller = policy.caller(os.environ)
         payload, text = _run(ctx, args, extra)
     except AgentError as exc:
         if args.json:

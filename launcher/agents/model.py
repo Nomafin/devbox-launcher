@@ -22,6 +22,12 @@ STATES = (ACTIVE, STOPPED, PARKED, ARCHIVED)
 # also takes bypassPermissions and dontAsk; neither is offered (see the
 # README, "Permission mode").
 PERMISSION_MODES = ("default", "acceptEdits", "auto", "plan")
+# From least to most permissive. None (the settings' default) ranks as default.
+MODE_ORDER = ("plan", "default", "acceptEdits", "auto")
+
+
+def mode_rank(mode: str | None) -> int:
+    return MODE_ORDER.index(mode or "default")
 
 
 class AgentError(Exception):
@@ -32,6 +38,17 @@ class AgentError(Exception):
     REFUSED = 6
     EXISTS = 7
     BROKEN = 8
+    # Refusals of what an agent (not a person) asked agentctl to do. Each has
+    # its own code, so the calling agent can tell them apart.
+    RUNNING = 9            # start --prompt on an agent that is running
+    LOW_MEMORY = 10
+    TOO_MANY_RUNNING = 11
+    TOO_MANY_CHILDREN = 12
+    NESTED = 13            # an agent another agent created may not create agents
+    OTHER_PROJECT = 14     # agents create only in their own project
+    NOT_YOURS = 15         # park/stop of an agent that is neither itself nor its child
+    MODE_RAISED = 16       # a child more permissive than its parent
+    PEOPLE_ONLY = 17       # archive, mode, schedule changes
 
     def __init__(self, code: int, message: str):
         super().__init__(message)
@@ -56,6 +73,8 @@ class Agent:
     # since a start is not work the brief has missed.
     last_started: float = 0.0
     last_error: str | None = None
+    # The agent that created this one (its key); None when a person did.
+    created_by: str | None = None
 
     @property
     def key(self) -> str:

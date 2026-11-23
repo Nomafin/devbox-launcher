@@ -200,7 +200,8 @@ def create_app(base_dir_fn=None, ctx_fn=None, svc=_service, trust=_trust, disc=_
             active=f"active {_age(int(c.now() - v.last_active))} ago" if not v.running else None,
             mission=v.mission, reason=reason,
             url=url, stale=_pop(stale, a.key), output=v.running or v.dead, ssh_user=ssh_user,
-            branch=_worktrees.head_branch(a.workdir), own_copy=a.has_worktree)
+            branch=_worktrees.head_branch(a.workdir), own_copy=a.has_worktree,
+            created_by=a.created_by)
 
     def project_html(place, run, listed: bool) -> str:
         label, tone = run_label(run)

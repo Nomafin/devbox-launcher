@@ -18,6 +18,14 @@ def make_repo(path: Path) -> Path:
     return path
 
 
+@pytest.fixture(autouse=True)
+def as_a_person(monkeypatch):
+    """These tests run inside an agent's session too: its AGENT_NAME would make
+    every agentctl call an agent's. Tests that want one set ctx.caller."""
+    monkeypatch.delenv("AGENT_NAME", raising=False)
+    monkeypatch.delenv("LAUNCHER_NTFY_URL", raising=False)
+
+
 @pytest.fixture
 def base(tmp_path):
     return tmp_path / "projects"
@@ -124,9 +132,14 @@ def world(tmp_path):
     home = tmp_path / "home"
     ids = iter(f"00000000-0000-0000-0000-{i:012d}" for i in range(1, 1000))
     trusted = []
+    pushes = []
+    memory = {"kb": 8 * 1024 * 1024}
     ctx = service.Ctx(root=home / ".config" / "agents", base_dir=base, home=home,
                       run=tmux, now=lambda: clock["t"], sleep=lambda s: None,
-                      trust=trusted.append, new_id=lambda: next(ids))
+                      trust=trusted.append, new_id=lambda: next(ids),
+                      available_kb=lambda: memory["kb"],
+                      notify=lambda home, message: pushes.append(message))
     place = service.place_for(ctx, dir=repo)[0]
     return SimpleNamespace(ctx=ctx, tmux=tmux, clock=clock, base=base, repo=repo,
-                           home=home, place=place, trusted=trusted)
+                           home=home, place=place, trusted=trusted,
+                           pushes=pushes, memory=memory)

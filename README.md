@@ -116,6 +116,7 @@ All optional, read from the environment by the systemd units:
 | `LAUNCHER_RUN_USER` | *(empty)* | Tailnet login allowed to use **Run command**; empty hides the feature — see below |
 | `LAUNCHER_GITHUB` | *(empty)* | `1` turns on the **Clone** and **New project** pages — see below |
 | `LAUNCHER_GITHUB_INVITES_FROM` | *(empty)* | GitHub account whose repo invitations the Clone page accepts; empty leaves invitations alone |
+| `LAUNCHER_NTFY_URL` | *(empty)* | ntfy topic URL (e.g. `https://ntfy.sh/<topic>`) pushed to when an agent creates or wakes another; empty means no pushes. `install.sh` records it for `agentctl`; re-running without it keeps the recorded one |
 | `AGENTS_HOME` | `~/.config/agents` | Agent registry and briefs (rarely worth changing) |
 
 ## How projects are discovered
@@ -251,8 +252,9 @@ The same operations from a shell on the box:
 
 ```bash
 agentctl ls [--project P] [--dir D] [--all]   # agents and their state (--all: archived too)
-agentctl new <project>/<name> [--mode M]      # worktree, branch agent/<name>, brief
-agentctl start <target> [--fresh [--force]] [--create] [--repair] [-- <claude args>]
+agentctl new <project>/<name> [--mode M] [--brief-file F]   # worktree, branch agent/<name>, brief
+agentctl start <target> [--fresh [--force]] [--create [--brief-file F]] [--repair]
+               [--prompt TEXT | --prompt-file F] [-- <claude args>]
 agentctl stop|park|archive <target>
 agentctl mode <target> --set default|acceptEdits|auto|plan
 agentctl scratch [--dir D | --project P]      # a Quick chat
@@ -284,6 +286,48 @@ kind, so scripts can act on it:
 | 6 | refused (e.g. archive with unsaved work) |
 | 7 | agent already exists |
 | 8 | worktree missing (use `--repair`) |
+| 9 | `--prompt` given but the agent is running (send it a message instead) |
+| 10–17 | refused to an agent caller; see [Agents managing agents](#agents-managing-agents) |
+
+`start --prompt` (or `--prompt-file`) starts a stopped or parked agent with
+that text as its first message: in its current conversation, or a new one with
+`--fresh`. A running agent is refused (exit 9), since it would never see it.
+
+### Agents managing agents
+
+An agent can run `agentctl` too: every agent's session has
+`AGENT_NAME=<project>/<name>` in its environment, and when that is set
+`agentctl` acts for that agent and holds it to these limits (people are never
+limited):
+
+| Code | Rule |
+|---|---|
+| 10 | nothing is started or created while less than 1.5 GB of memory is available |
+| 11 | …or while 10 or more agents run |
+| 12 | an agent has at most 3 live (not archived) agents of its own |
+| 13 | an agent that another agent created may not create agents |
+| 14 | agents create agents only in their own project (waking any agent is fine) |
+| 15 | agents park, stop or restart only themselves and agents they created |
+| 16 | a new agent is never more permissive than its parent (plan < default < acceptEdits < auto); without `--mode` it gets the parent's |
+| 17 | `archive`, `mode`, `scratch`, `import` and `schedule add/rm/pause/resume` are for people; after `--` only `--model` may be passed on |
+
+The three numbers can be changed in `~/.config/agents/limits.json`:
+`{"min_available_mb": 1536, "max_running": 10, "max_children": 3}`. The agent
+that created another is recorded (`created_by` in the registry) and shown on
+its row. Creating an agent, and waking one with a task, each push
+"`<parent> created <child>: <mission>`" or "`<caller> woke <target>`" to
+`LAUNCHER_NTFY_URL`, if set.
+
+A typical delegation from inside an agent:
+
+```bash
+agentctl new notes/drafts --brief-file /tmp/drafts-brief.md
+agentctl start notes/drafts --prompt-file /tmp/drafts-task.md
+```
+
+These are guardrails for agents that mean well, not a security boundary: an
+agent's shell could unset `AGENT_NAME`. Pair them with permission rules in
+Claude's settings.
 
 **Copy terminal command.** A running agent's row has a button that copies
 `ssh -t <user>@<this host> tmux -u -L agents attach -t "'=<project>/<name>'"`,
