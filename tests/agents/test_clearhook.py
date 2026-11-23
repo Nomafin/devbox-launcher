@@ -111,3 +111,30 @@ def test_settings_register_the_hook_for_clear(tmp_path):
     assert hook["timeout"] >= clearhook.HANDOFF_TIMEOUT
     argv = shlex.split(hook["command"])
     assert argv == [sys.executable, "-m", "launcher.agents.cli", "hook", "session-start"]
+
+
+def test_settings_allow_agentctl_within_limits_and_deny_the_rest(tmp_path):
+    p = clearhook.write_settings(tmp_path)
+    perms = json.loads(p.read_text())["permissions"]
+    assert perms["allow"] == [f"Bash(agentctl {c}:*)" for c in
+                              ("ls", "resolve", "brief-status", "new", "start", "park", "stop")]
+    deny = perms["deny"]
+    for c in ("archive", "mode", "schedule"):
+        assert f"Bash(agentctl {c}:*)" in deny
+    for f in ("limits.json", "registry.json"):
+        path = "//" + str((tmp_path / f).resolve()).lstrip("/")
+        assert f"Edit({path})" in deny and f"Write({path})" in deny
+    assert not set(perms["allow"]) & set(deny)
+    assert data_hook(p) == "clear"                  # the hook is still there
+
+
+def test_settings_are_rewritten_when_an_older_file_lacks_permissions(tmp_path):
+    p = tmp_path / clearhook.SETTINGS
+    p.write_text('{"hooks": {}}\n')
+    clearhook.write_settings(tmp_path)
+    assert "permissions" in json.loads(p.read_text())
+
+
+def data_hook(p):
+    [entry] = json.loads(p.read_text())["hooks"]["SessionStart"]
+    return entry["matcher"]
