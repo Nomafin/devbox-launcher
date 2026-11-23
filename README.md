@@ -326,8 +326,12 @@ agentctl start notes/drafts --prompt-file /tmp/drafts-task.md
 ```
 
 These are guardrails for agents that mean well, not a security boundary: an
-agent's shell could unset `AGENT_NAME`. Pair them with permission rules in
-Claude's settings.
+agent's shell could unset `AGENT_NAME`. The settings every agent starts with
+(`~/.config/agents/claude-settings.json`, passed with `--settings`) add the
+permission half: `agentctl ls|resolve|brief-status|new|start|park|stop` run
+without asking, `agentctl archive|mode|schedule` are denied, and so are Edit
+and Write of `limits.json` and `registry.json`. Claude Code merges these with
+your own settings, and a deny always wins.
 
 **Copy terminal command.** A running agent's row has a button that copies
 `ssh -t <user>@<this host> tmux -u -L agents attach -t "'=<project>/<name>'"`,

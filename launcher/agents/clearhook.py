@@ -94,11 +94,33 @@ def main(stdin=None) -> int:
     return 0
 
 
+# What agents may run without asking, and what they may never run: the
+# permission half of agentctl's limits (see policy). Claude Code merges these
+# rules with the user's own settings; a deny always wins.
+AGENTCTL_ALLOWED = ("ls", "resolve", "brief-status", "new", "start", "park", "stop")
+AGENTCTL_DENIED = ("archive", "mode", "schedule")
+# Files that hold the limits and the parentage agentctl enforces.
+PROTECTED = ("limits.json", "registry.json")
+
+
+def permissions(root) -> dict:
+    # "//" starts an absolute path in a permission rule ("/" alone is relative
+    # to the settings file).
+    files = ["//" + str((Path(root) / f).resolve()).lstrip("/") for f in PROTECTED]
+    return {
+        "allow": [f"Bash(agentctl {c}:*)" for c in AGENTCTL_ALLOWED],
+        "deny": [f"Bash(agentctl {c}:*)" for c in AGENTCTL_DENIED]
+                + [f"{tool}({f})" for f in files for tool in ("Edit", "Write")],
+    }
+
+
 def write_settings(root) -> Path:
-    """The --settings file that registers the hook for /clear."""
+    """The --settings file every agent starts with: the hook for /clear, and
+    the permission rules for agentctl."""
     command = shlex.join([sys.executable, "-m", "launcher.agents.cli", "hook", "session-start"])
-    data = {"hooks": {"SessionStart": [{"matcher": "clear", "hooks": [
-        {"type": "command", "command": command, "timeout": HANDOFF_TIMEOUT + 60}]}]}}
+    data = {"permissions": permissions(root),
+            "hooks": {"SessionStart": [{"matcher": "clear", "hooks": [
+                {"type": "command", "command": command, "timeout": HANDOFF_TIMEOUT + 60}]}]}}
     p = Path(root) / SETTINGS
     text = json.dumps(data, indent=2) + "\n"
     if not p.exists() or p.read_text() != text:
