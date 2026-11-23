@@ -69,6 +69,14 @@ def _gb(kb: int) -> str:
     return str(int(value)) if value == int(value) else str(value)
 
 
+def available_kb(path: Path | None = None) -> int | None:
+    """MemAvailable in kB, or None when it cannot be read."""
+    fields = _fields(path or MEMINFO)
+    if not fields and path is None and sys.platform == "darwin":
+        fields = _darwin_fields()
+    return fields.get("MemAvailable")
+
+
 def memory(path: Path | None = None) -> str:
     """"4.2 of 12 GB", or "" when it cannot be read.
 

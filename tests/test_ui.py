@@ -213,3 +213,8 @@ def test_nest_puts_agent_rows_inside_their_card():
     out = ui.nest(rows)
     assert len(out) == 2 and '<div class="alist"><div id=a></div></div>' in out[0]
     assert '<div class="alist"></div>' in out[1]
+
+
+def test_agent_row_names_the_agent_that_created_it():
+    assert "created by notes/main" in _agent(created_by="notes/main")
+    assert "created by" not in _agent()

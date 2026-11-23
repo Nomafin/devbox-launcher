@@ -25,6 +25,9 @@ GITHUB="${LAUNCHER_GITHUB:-}"
 GITHUB_INVITES_FROM="${LAUNCHER_GITHUB_INVITES_FROM:-}"
 # The Schedules page and the job that runs them. Empty = off.
 SCHEDULES="${LAUNCHER_SCHEDULES:-}"
+# ntfy topic URL pushed to when an agent creates or wakes another. Empty keeps
+# whatever an earlier install recorded.
+NTFY_URL="${LAUNCHER_NTFY_URL:-}"
 # Memory fence around the agents and all they run (systemd only), e.g. 9G.
 AGENTS_MEMORY_MAX="${LAUNCHER_AGENTS_MEMORY_MAX:-}"
 AGENTS_SWAP_MAX="${LAUNCHER_AGENTS_SWAP_MAX:-1G}"
@@ -84,6 +87,9 @@ mkdir -p "$BASE_DIR"
 # For agentctl in a terminal, where the units' environment is not set.
 mkdir -p "$HOME/.config/devbox-launcher"
 printf '%s\n' "$BASE_DIR" > "$HOME/.config/devbox-launcher/base-dir"
+if [ -n "$NTFY_URL" ]; then
+    printf '%s\n' "$NTFY_URL" > "$HOME/.config/devbox-launcher/ntfy-url"
+fi
 
 note "creating the venv ($VENV)"
 mkdir -p "$(dirname "$VENV")"

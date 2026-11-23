@@ -21,15 +21,14 @@ from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 from typing import Iterator
 
-from . import service
+from . import runtime, service
 from .model import MAIN, AgentError
 
 # A run this much late still happens; later than that it waits for its next time.
 GRACE = 3600
 # An agent with activity this recent is taken to be still working.
 BUSY_WITHIN = 600
-# The prompt travels on the tmux command line, whose message size is limited.
-MAX_PROMPT = 8000
+MAX_PROMPT = runtime.MAX_PROMPT
 
 _TIME = re.compile(r"([01]?\d|2[0-3]):([0-5]\d)")
 _MODEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:\[\]-]*")

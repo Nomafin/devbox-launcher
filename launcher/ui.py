@@ -809,7 +809,7 @@ _AGENT_ROW = """<div class="row agent{cls}" data-slug="{key}" data-state="{state
     </div>
   </div>{why}
   <div class="adetail">
-    <div class="meta"><span class="id">{display}</span></div>{mission}{buttons}{note}{permission}{link}{output}
+    <div class="meta"><span class="id">{display}</span>{parent}</div>{mission}{buttons}{note}{permission}{link}{output}
   </div>
 </div>"""
 
@@ -912,7 +912,7 @@ def _agent_button(path, action, label, pending, force=False) -> str:
 def agent_row(*, key, name, display, state, status, running, parked, scratch, archivable,
               resumable, broken, mode, age=None, active=None, mission=None, reason=None,
               url=None, stale=False, output=None, ssh_user=None, branch=None,
-              own_copy=False) -> str:
+              own_copy=False, created_by=None) -> str:
     """One agent. `state` is the rail colour and the client's marker, as on
     project rows before: connected / starting / ready / failed / stopped.
     `branch` is what its working directory has checked out (None: unknown, and
@@ -957,6 +957,7 @@ def agent_row(*, key, name, display, state, status, running, parked, scratch, ar
         age=_AGE.format(age=escape(age)) if age else "",
         active=_AGE.format(age=escape(active)) if active else "",
         display=escape(display),
+        parent=f" · created by {escape(created_by)}" if created_by else "",
         mission=_MISSION.format(text=escape(mission)) if mission else "",
         why=_WHY.format(reason=escape(reason)) if reason else "",
         buttons=_AGENT_BUTTONS.format(buttons="".join(buttons)) if buttons else "",

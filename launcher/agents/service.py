@@ -12,8 +12,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
-from .. import config, trust as _trust, worktrees
-from . import briefs, clearhook, places, registry, runtime
+from .. import config, hostinfo, trust as _trust, worktrees
+from . import briefs, clearhook, notify as _notify, places, policy, registry, runtime
 from .model import (ACTIVE, AGENT, ARCHIVED, MAIN, PARKED, SCRATCH, STOPPED, Agent,
                     AgentError, check_mode, check_name, split_key)
 from .places import Place
@@ -43,6 +43,11 @@ class Ctx:
     sleep: Callable[[float], None] = time.sleep
     trust: Callable = _trust.ensure_trusted
     new_id: Callable[[], str] = field(default=lambda: str(uuid.uuid4()))
+    # The agent running this command (its key), or None for a person. Only
+    # agentctl sets it; see policy.
+    caller: str | None = None
+    available_kb: Callable[[], int | None] = hostinfo.available_kb
+    notify: Callable = _notify.send       # (home, message)
 
     @classmethod
     def default(cls, base_dir=None) -> "Ctx":
@@ -151,27 +156,61 @@ def _crashed(s: runtime.Session | None) -> bool:
 
 # --- operations --------------------------------------------------------------
 
-def _new(ctx: Ctx, agents: dict, place: Place, name: str, mode=None) -> Agent:
+def _running(ctx: Ctx) -> int:
+    return sum(1 for s in runtime.sessions(ctx.home, ctx.run).values() if not s.dead)
+
+
+def _check_room(ctx: Ctx) -> None:
+    if ctx.caller:
+        policy.room(ctx.root, _running(ctx), ctx.available_kb())
+
+
+def _new(ctx: Ctx, agents: dict, place: Place, name: str, mode=None,
+         brief: str | None = None) -> Agent:
     check_name(name)
     mode = check_mode(mode)
     existing = agents.get(f"{place.slug}/{name}")
     if existing is not None and existing.state != ARCHIVED:
         raise AgentError(AgentError.EXISTS, f"agent {existing.key} already exists")
+    if ctx.caller:
+        mode = policy.create(agents, ctx.caller, place.slug, mode, ctx.root)
+        _check_room(ctx)
     branch = f"agent/{name}"
     error = worktrees.create(place.cwd, name, run=ctx.git, branch=branch)
     if error:
         raise AgentError(AgentError.REFUSED, error)
     agent = Agent(project=place.slug, name=name, cwd=str(place.cwd),
                   workdir=str(worktrees.path(place.cwd, name)), branch=branch, mode=mode,
-                  created=ctx.now())
+                  created=ctx.now(), created_by=ctx.caller)
     agents[agent.key] = agent
-    briefs.ensure(ctx.root, agent)
+    p = briefs.ensure(ctx.root, agent)
+    if brief and brief.strip():
+        p.write_text(brief.rstrip() + "\n")
     return agent
 
 
-def new(ctx: Ctx, place: Place, name: str, mode=None) -> Agent:
+def _announce(ctx: Ctx, message: str) -> None:
+    """After the registry is saved: a push may take seconds."""
+    try:
+        ctx.notify(ctx.home, message)
+    except Exception:
+        pass
+
+
+def _announce_new(ctx: Ctx, agent: Agent) -> None:
+    if not agent.created_by:
+        return
+    p = briefs.path(ctx.root, agent)
+    mission = briefs.mission(p.read_text()) if p.exists() else None
+    _announce(ctx, f"{agent.created_by} created {agent.display}"
+              + (f": {mission}" if mission else ""))
+
+
+def new(ctx: Ctx, place: Place, name: str, mode=None, brief: str | None = None) -> Agent:
     with registry.transaction(ctx.root) as agents:
-        return _new(ctx, agents, place, name, mode)
+        agent = _new(ctx, agents, place, name, mode, brief)
+    _announce_new(ctx, agent)
+    return agent
 
 
 def _settle(ctx: Ctx, agent: Agent) -> str | None:
@@ -213,11 +252,19 @@ def _make_room(ctx: Ctx, agents: dict, starting: Agent | None = None) -> list[st
     return parked
 
 def _start(ctx: Ctx, agents: dict, agent: Agent, *, fresh: bool, force: bool,
-           repair: bool, extra=()) -> Agent:
+           repair: bool, extra=(), prompt: str | None = None) -> Agent:
     live = runtime.sessions(ctx.home, ctx.run).get(agent.display)
-    if live is not None and not live.dead and not fresh:
+    running = live is not None and not live.dead
+    if running and prompt is not None:
+        raise AgentError(AgentError.RUNNING,
+                         f"{agent.display} is running, so it cannot be started with a task; "
+                         "send the task to it with SendMessage instead")
+    if running and not fresh:
         agent.state = ACTIVE
         return agent
+    if running:
+        policy.stop(ctx.caller, agent, "restart")
+    _check_room(ctx)
     _make_room(ctx, agents, agent)
     _follow_clear(ctx, agent)
     if (fresh and not force and agent.kind == AGENT and agent.session_id is not None
@@ -254,7 +301,7 @@ def _start(ctx: Ctx, agents: dict, agent: Agent, *, fresh: bool, force: bool,
     if agent.has_worktree:
         worktrees.exclude(agent.cwd, run=ctx.git)
     command = runtime.claude_command(agent, fresh=not resume, seed=seed, extra=extra,
-                                     brief_dir=brief_dir, settings=settings)
+                                     brief_dir=brief_dir, settings=settings, prompt=prompt)
     try:
         runtime.start(ctx.home, agent.display, agent.workdir, command, env, ctx.run)
         why = _settle(ctx, agent)
@@ -276,15 +323,39 @@ def _start(ctx: Ctx, agents: dict, agent: Agent, *, fresh: bool, force: bool,
     return agent
 
 
+def check_prompt(prompt: str | None) -> str | None:
+    if prompt is None:
+        return None
+    prompt = prompt.strip()
+    if not prompt:
+        raise AgentError(AgentError.INVALID, "the prompt is empty")
+    if len(prompt) > runtime.MAX_PROMPT:
+        raise AgentError(AgentError.INVALID, f"the prompt is over {runtime.MAX_PROMPT} characters; "
+                         "put the details in the agent's brief or a file and point to it")
+    return prompt
+
+
 def start(ctx: Ctx, place: Place, name: str, *, fresh=False, force=False, create=False,
-          repair=False, extra=()) -> Agent:
-    with registry.transaction(ctx.root) as agents:
-        key = f"{place.slug}/{name}"
-        known = agents.get(key)
-        if create and name != MAIN and (known is None or known.state == ARCHIVED):
-            _new(ctx, agents, place, name)
-        agent = _get(ctx, agents, place, name)
-        return _start(ctx, agents, agent, fresh=fresh, force=force, repair=repair, extra=extra)
+          repair=False, extra=(), prompt: str | None = None, brief: str | None = None) -> Agent:
+    """Start (or resume) an agent. With a prompt, that is its first message;
+    an agent already running is refused, since it would not see it."""
+    prompt = check_prompt(prompt)
+    created = None
+    try:
+        with registry.transaction(ctx.root) as agents:
+            key = f"{place.slug}/{name}"
+            known = agents.get(key)
+            if create and name != MAIN and (known is None or known.state == ARCHIVED):
+                created = _new(ctx, agents, place, name, brief=brief)
+            agent = _get(ctx, agents, place, name)
+            agent = _start(ctx, agents, agent, fresh=fresh, force=force, repair=repair,
+                           extra=extra, prompt=prompt)
+    finally:
+        if created is not None:         # it exists even if its start failed
+            _announce_new(ctx, created)
+    if prompt is not None and ctx.caller and created is None:
+        _announce(ctx, f"{ctx.caller} woke {agent.display}")
+    return agent
 
 
 def _stop(ctx: Ctx, agent: Agent, state: str) -> None:
@@ -292,24 +363,32 @@ def _stop(ctx: Ctx, agent: Agent, state: str) -> None:
     agent.state = state
 
 
-def stop(ctx: Ctx, place: Place, name: str) -> Agent | None:
-    """Stop; a scratch session is deleted outright, since it never resumes."""
+def _stop_checked(ctx: Ctx, place: Place, name: str, state: str) -> Agent | None:
+    """Park or stop. An agent stopping itself is killed by the kill, so the
+    registry is saved first and the session killed after."""
     with registry.transaction(ctx.root) as agents:
         agent = _get(ctx, agents, place, name)
-        _stop(ctx, agent, STOPPED)
+        if state == PARKED and agent.kind == SCRATCH:
+            raise AgentError(AgentError.REFUSED, "scratch sessions are not parked; stop it")
+        policy.stop(ctx.caller, agent, "park" if state == PARKED else "stop")
+        itself = agent.key == ctx.caller
+        if not itself:
+            runtime.kill(ctx.home, agent.display, ctx.run)
+        agent.state = state
         if agent.kind == SCRATCH:
             del agents[agent.key]
-            return None
-        return agent
+    if itself:
+        runtime.kill(ctx.home, agent.display, ctx.run)
+    return None if agent.kind == SCRATCH else agent
+
+
+def stop(ctx: Ctx, place: Place, name: str) -> Agent | None:
+    """Stop; a scratch session is deleted outright, since it never resumes."""
+    return _stop_checked(ctx, place, name, STOPPED)
 
 
 def park(ctx: Ctx, place: Place, name: str) -> Agent:
-    with registry.transaction(ctx.root) as agents:
-        agent = _get(ctx, agents, place, name)
-        if agent.kind == SCRATCH:
-            raise AgentError(AgentError.REFUSED, "scratch sessions are not parked; stop it")
-        _stop(ctx, agent, PARKED)
-        return agent
+    return _stop_checked(ctx, place, name, PARKED)
 
 
 def archive(ctx: Ctx, place: Place, name: str) -> Agent:
